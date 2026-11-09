@@ -122,7 +122,8 @@ let OCRW=null;
 async function ocrOf(src){
   if(!window.Tesseract)await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s)});
   OCRW=OCRW||await Tesseract.createWorker('eng');
-  return(await OCRW.recognize(src)).data.text.split('\n').map(x=>x.trim()).filter(Boolean);
+  const d=(await OCRW.recognize(src)).data;
+  return(d.lines||[]).filter(l=>l.confidence>=75).map(l=>l.text.trim()).filter(Boolean);
 }
 async function pageLines(pg){
   const tc=await pg.getTextContent(),rows=[];
@@ -134,7 +135,8 @@ const BUL=/^\s*(?:[•\u2022\u25AA\u25CF\u25E6·*\-–—]|\(?\d{1,3}[.)]|[a-z][
 function assemble(lines,hint,fid){
   const hs=lines.filter(l=>l.h>0).map(l=>l.h).sort((a,b)=>a-b),mh=hs.length?hs[Math.floor(hs.length/2)]:0,nh=hint.map(x=>x.toLowerCase());
   let cur=fid?topics[fid].name:(hint.length===1?hint[0]:''),pend='';const by={};
-  const flush=()=>{if(pend.trim().length>3){const nm=cur||'Untitled',k=nm.toLowerCase();(by[k]=by[k]||{name:nm,facts:[]}).facts.push(pend.trim())}pend=''};
+  const junk=t=>{const w=t.match(/[A-Za-z]{3,}/g)||[];if(!w.length)return true;const bad=w.filter(x=>!/[aeiouyAEIOUY]/.test(x)&&x!==x.toUpperCase()).length;return bad/w.length>.3||t.replace(/[^A-Za-z]/g,'').length/t.length<.5};
+  const flush=()=>{if(pend.trim().length>3&&!junk(pend)){const nm=cur||'Untitled',k=nm.toLowerCase();(by[k]=by[k]||{name:nm,facts:[]}).facts.push(pend.trim())}pend=''};
   for(const l of lines){
     const t=l.t;if(!t)continue;let head=null;
     if(!fid){const lc=t.toLowerCase().replace(/[:\-–\s]+$/,'');
@@ -147,20 +149,22 @@ function assemble(lines,hint,fid){
   }
   flush();return by;
 }
-async function localExtract(pages,hint,fid,st){
-  const lines=[];
+async function localExtract(pages,hint,fid,st,ocr){
+  const lines=[];let nskip=0;
   for(let i=0;i<pages.length&&!STOP;i++){
     const u=pages[i];st.textContent=`Reading page ${i+1} of ${pages.length}…`;
     try{
       if(u.text){u.text.split('\n').forEach(t=>lines.push({t:t.trim(),h:0}));continue}
       let L=[];
       if(u.pdf){const pg=await u.pdf.getPage(u.p);L=await pageLines(pg);
-        if(L.map(l=>l.t).join('').length<40){st.textContent=`Page ${i+1} is a scan, running OCR (slow)…`;const vp=pg.getViewport({scale:2}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;L=(await ocrOf(c)).map(t=>({t,h:0}))}}
-      else L=(await ocrOf(u.file)).map(t=>({t,h:0}));
+        if(L.map(l=>l.t).join('').length<40){
+          if(!ocr){nskip++;continue}
+          st.textContent=`Page ${i+1} is a scan, running OCR (slow)…`;const vp=pg.getViewport({scale:2}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;L=(await ocrOf(c)).map(t=>({t,h:0}))}}
+      else{if(!ocr){nskip++;continue}L=(await ocrOf(u.file)).map(t=>({t,h:0}))}
       L.forEach(l=>lines.push(l));
     }catch(e){console.error(e)}
   }
-  review(assemble(lines,hint,fid),[]);
+  review(assemble(lines,hint,fid),nskip?[nskip+' scanned or handwritten page(s) were NOT read, because free OCR can’t read handwriting. Add a free Gemini key in Settings, then upload them again.']:[]);
 }
 let q='',STOP=0;
 function home(){
@@ -183,11 +187,12 @@ async function del(id,b){if(!b.dataset.c){b.dataset.c=1;b.textContent='Tap again
   const T=topics[id];delete topics[id];delete BANK[id];
   if(col)try{await col.doc(id).delete();for(let k=0;k<(T.bn||0);k++)await bcol.doc(id+'_'+k).delete()}catch(e){}home()}
 function addView(id){
-  app.innerHTML=`<h1>${id?'Add notes to '+esc(topics[id].name):'Upload notes'}</h1>
+  app.innerHTML=`<h1>${id?'Add notes to '+esc(topics[id].name):'Upload notes'}</h1>${sample?'':'<div class="warn">Handwritten notes need the AI helper. Add a free Gemini key in Settings first, or the facts will come out as garbage.</div>'}
   <p class="mut">Choose one or more PDFs (or photos). A PDF can hold several topics; they’re detected and split automatically. Keep this page open while it reads.</p>
   <input type="file" id="fl" accept="application/pdf,image/*" multiple>
   <p class="mut" style="margin:14px 0 4px">If the file button doesn’t open on your phone, copy the text from your PDF and paste it here instead:</p><textarea id="tx" style="min-height:140px" placeholder="Paste notes text here (one or many topics)"></textarea>
   ${id?'':'<p class="mut" style="margin:14px 0 4px">Optional: list the topics in this file, one per line, to help sort the facts.</p><textarea id="hint" placeholder="Naxalism&#10;Mission Karmayogi"></textarea>'}
+  <label class="mut" style="display:block;margin-top:12px"><input type="checkbox" id="ocr"> Printed (not handwritten) scans: try free OCR</label>
   <div class="row"><button class="p" id="go" onclick="extract('${id||''}')">Extract facts</button><button id="stop" style="display:none" onclick="STOP=1">Stop &amp; keep what’s done</button><button onclick="home()">Cancel</button></div>
   <div id="st" class="mut" style="margin-top:12px"></div>`;
 }
@@ -209,7 +214,7 @@ async function extract(fid){
     }
   }catch(e){console.error(e);st.textContent='Could not open the file: '+(e.message||e);document.getElementById('go').disabled=false;return}
   for(let i=0;i<txt.length;i+=3500)pages.push({text:txt.slice(i,i+3500),label:'pasted text'});
-  if(!sample)return localExtract(pages,hint,fid,st);
+  if(!sample)return localExtract(pages,hint,fid,st,document.getElementById('ocr')&&document.getElementById('ocr').checked);
   const by={},skipped=[];let cur=fid?topics[fid].name:'';
   const unit=async u=>{
     if(u.text)return{t:u.text};
@@ -236,7 +241,7 @@ async function extract(fid){
         ok=true;
       }catch(e){console.error(e)}
     }
-    if(!ok)skipped.push(grp.map(g=>g.label).join(', '));
+    if(!ok)skipped.push('Couldn’t read '+grp.map(g=>g.label).join(', ')+'. Upload them again.');
   }
   review(by,skipped);
 }
@@ -244,7 +249,7 @@ function review(by,skipped){
   const g=Object.values(by).map(t=>({name:t.name,facts:[...new Set(t.facts.filter(Boolean))]}));
   window._pend={g};
   app.innerHTML=`<h1>Review</h1><div class="mut" style="margin-bottom:12px">${g.length} topic(s) found. Fix any names; topics given the same name are merged.</div>`+
-  (skipped.length?`<div class="warn">Couldn’t read: ${esc(skipped.join('; '))}. Upload those again.</div>`:'')+
+  (skipped.length?`<div class="warn">⚠ ${esc(skipped.join(' '))}</div>`:'')+
   g.map((t,i)=>`<div class="card"><div class="row" style="margin:0;flex-wrap:nowrap"><input type="checkbox" id="c${i}" checked><input type="text" id="n${i}" value="${esc(t.name)}"></div><details style="margin-top:8px"><summary class="mut">${t.facts.length} facts</summary><ul class="f">${t.facts.map(f=>'<li>'+esc(f)+'</li>').join('')}</ul></details></div>`).join('')+
   `<div class="row"><button class="p" onclick="commit()">Save selected</button><button onclick="home()">Discard</button></div>`;
 }
@@ -318,11 +323,25 @@ function order(x){
   const sw=j=>{const c=cor.slice();[c[j],c[j+1]]=[c[j+1],c[j]];return c.join('–')},ans=cor.join('–'),o=shuffle([ans,sw(0),sw(1),sw(2)]);
   return{it:x,q:'Arrange the following in chronological order (earliest first):\n'+it.map((v,i)=>L[i]+'. '+v.t).join('\n'),o,a:o.indexOf(ans),e:'Correct order: '+ans+'. Years: '+it.map((v,i)=>L[i]+' = '+v.y).join(', ')}
 }
+const W={blank:30,recall:30,consider:12,order:17,correct:4,not:4,about:3};
+const pickTypes=()=>Object.keys(W).map(k=>[k,-Math.log(Math.random())/W[k]]).sort((a,b)=>a[1]-b[1]).map(a=>a[0]);
+const VERBS=/\s(is|was|are|were|has|have|had|means|refers to|known as|launched|started|began|founded|introduced|established|announced|signed|passed|declared|spans|covers|aims|commenced|adopted|merged|inaugurated|released|approved|awarded|appointed|elected|won|hosted|signed)\s/i;
+function split(t){const m=VERBS.exec(t);if(!m||m.index<3||m.index>70)return null;const rest=t.slice(m.index+m[0].length).trim();return rest.length<8?null:{sub:t.slice(0,m.index).trim(),verb:m[1],pred:rest}}
+function recall(x){
+  const F=topics[S.id].facts,a=split(x.f.t);if(!a)return null;
+  const hasY=p=>/\b(?:1[0-9]|20)\d\d\b/.test(p),seen=new Set([a.pred]),ot=[];
+  shuffle(F.map((f,i)=>i).filter(i=>i!==x.i)).forEach(i=>{const b=split(F[i].t);if(b&&!seen.has(b.pred)){seen.add(b.pred);ot.push([b.pred,Math.abs(b.pred.length-a.pred.length)/10+(hasY(b.pred)===hasY(a.pred)?0:3)+Math.random()*2])}});
+  if(ot.length<3)return null;
+  const d=ot.sort((p,q)=>p[1]-q[1]).slice(0,3).map(v=>v[0]),o=shuffle([a.pred,...d]);
+  return{it:x,q:'Complete the statement correctly:\n'+a.sub+' '+a.verb+' …',o,a:o.indexOf(a.pred),e:'Your notes say: '+x.f.t}
+}
 function localQ(x){
-  const r0=Math.random();if(r0<.2){const q=consider(x);if(q)return q}else if(r0<.3){const q=order(x);if(q)return q}
   const t=x.f.t,cs=cands(t),ct=cs.length?cs:[...t.matchAll(/\b[a-z]{7,}\b/g)].map(m=>({s:m.index,e:m.index+m[0].length,x:m[0],c:'w'}));
-  if(!ct.length)return null;
-  for(const ty of shuffle(['blank','correct','not','about'])){
+  for(const ty of pickTypes()){
+    if(ty==='consider'){const q=consider(x);if(q)return q;continue}
+    if(ty==='order'){const q=order(x);if(q)return q;continue}
+    if(ty==='recall'){const q=recall(x);if(q)return q;continue}
+    if(!ct.length)continue;
     const c=ct[Math.floor(Math.random()*ct.length)],d=distract(c,t);if(!d)continue;
     const swap=v=>t.slice(0,c.s)+v+t.slice(c.e);
     if(ty==='blank'){const o=shuffle([c.x,...d]);return{it:x,q:'Fill in the blank:\n'+swap('_____'),o,a:o.indexOf(c.x),e:'Correct: '+t}}
