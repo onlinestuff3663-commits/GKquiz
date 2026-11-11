@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Exam Quiz Trainer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{--bg:#faf9f7;--fg:#1f1d1a;--mut:#6b675f;--card:#fff;--bd:#e0dbd2;--ac:#c2410c;--ok:#166534;--okb:#dcfce7;--no:#991b1b;--nob:#fee2e2;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1a1917;--fg:#ece9e2;--mut:#a09b90;--card:#262421;--bd:#3a3733;--ac:#fb923c;--ok:#86efac;--okb:#14351f;--no:#fca5a5;--nob:#401717;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1a1917;--fg:#ece9e2;--mut:#a09b90;--card:#262421;--bd:#3a3733;--ac:#fb923c;--ok:#86efac;--okb:#14351f;--no:#fca5a5;--nob:#401717;color-scheme:dark}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+#app{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 14px}h2{font-size:18px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+.mut{color:var(--mut);font-size:14px}
+button,.btn{font:inherit;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:10px;padding:10px 14px;cursor:pointer}
+button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+button:disabled{opacity:.5}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+input[type=text],textarea{width:100%;min-width:0;font:inherit;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}
+textarea{min-height:90px}
+.opt{display:block;width:100%;text-align:left;margin-top:8px;padding:12px}
+.opt.ok{background:var(--okb);border-color:var(--ok);color:var(--ok)}
+.opt.no{background:var(--nob);border-color:var(--no);color:var(--no)}
+.exp{margin-top:12px;padding:12px;border-radius:10px;background:var(--bg);border:1px solid var(--bd)}
+.bar{height:6px;background:var(--bd);border-radius:3px;overflow:hidden;margin-bottom:12px}.bar>div{height:100%;background:var(--ac)}
+.warn{background:var(--nob);color:var(--no);padding:10px;border-radius:10px;margin-bottom:12px}
+ul.f{padding-left:18px;max-height:260px;overflow:auto;font-size:14px}
+</style></head><body><div id="app">Loading…</div>
+<script>
+const app=document.getElementById('app');
+let db,sample,col,bcol,uid,topics={},S=null;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid8=()=>Math.random().toString(36).slice(2,9);
+const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+async function init(){
+  try{col=mkcol('topics');bcol=mkcol('bank');(await col.get()).docs.forEach(d=>topics[d.id]=d.data());if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){console.error(e);col=null}
+  sample=mkSample();home();
+}
+async function save(id){if(!col)return;try{await col.doc(id).set(topics[id])}catch(e){console.error(e)}}
+const BANK={};
+function toast(m){const d=document.createElement('div');d.className='warn';d.textContent=m;app.prepend(d);setTimeout(()=>d.remove(),4500)}
+async function loadBank(id){
+  if(BANK[id])return BANK[id];const m={},T=topics[id];
+  if(bcol)for(let k=0;k<(T.bn||0);k++){try{const d=await bcol.doc(id+'_'+k).get();if(d.exists){const mm=d.data().m||{};for(const i in mm)m[i]=mm[i]}}catch(e){console.error(e)}}
+  return BANK[id]=m;
+}
+async function saveChunk(id,k){
+  const B=BANK[id],m={};for(const i in B)if(Math.floor(i/40)===k)m[i]=B[i];
+  if(bcol)try{await bcol.doc(id+'_'+k).set({m})}catch(e){console.error(e)}
+  const T=topics[id];T.bn=Math.max(T.bn||0,k+1);T.bk=Object.keys(B).filter(i=>B[i].length>=4).length;await save(id);
+}
+async function build(ids){
+  if(!sample){toast('Add a free Gemini key (or Claude key) in Settings to build AI-written questions.');return}
+  STOP=0;
+  app.innerHTML='<h1>Building question bank</h1><div class="bar"><div id="bp" style="width:0"></div></div><div id="bs" class="mut">Starting…</div><div class="row"><button onclick="STOP=1">Stop &amp; save</button></div><p class="mut">Keep this page open. Whatever is finished is saved as it goes, so you can stop and resume later.</p>';
+  const todo=[];
+  for(const id of ids){const B=await loadBank(id);topics[id].facts.forEach((f,i)=>{if((B[i]||[]).length<4)todo.push({id,i})})}
+  let p=0,done=0,fail=0;
+  while(p<todo.length&&!STOP){
+    const id=todo[p].id,grp=[];
+    while(p<todo.length&&todo[p].id===id&&grp.length<8)grp.push(todo[p++]);
+    document.getElementById('bs').textContent=`${done} of ${todo.length} facts done · ${topics[id].name}`;
+    const T=topics[id],B=BANK[id],seed=Math.random().toString(36).slice(2,6);
+    const pr=`You are a tough exam-paper setter for Indian competitive exams. For each numbered fact write 4 DIFFERENT multiple-choice questions that each test exactly that fact. Difficulty mix per fact: one easy, two medium, one hard. Make them genuinely different: vary the wording, the angle and the style (direct recall; "which is NOT / incorrect" twist; assertion to judge; fill in the blank using ____; scenario-based; reverse question asking for the name/place/number). At least one of the four must be fill-in-the-blank. Each question has exactly 4 options. Distractors must be plausible and close to the right answer (same category, similar names, dates, numbers, places), different in each of the 4 questions, never obviously wrong; only one option is correct. "e" is a 2-3 sentence explanation: state the correct fact fully and briefly say why the closest wrong options are wrong. Seed: ${seed}. Return ONLY JSON: [{"i":<fact number>,"qs":[{"q":"...","o":["..","..","..",".."],"a":<index 0-3>,"e":"..."}]}]\n\nFACTS:\n`+grp.map((g,k)=>`${k+1}. ${T.facts[g.i].t}`).join('\n');
+    let ok=false;
+    for(let t=0;t<2&&!ok;t++){try{
+      const r=await sample.json(pr,{cache:false});
+      r.forEach(x=>{const g=grp[x.i-1];if(!g||!Array.isArray(x.qs))return;
+        const v=x.qs.filter(q=>q&&Array.isArray(q.o)&&q.o.length===4&&q.a>=0&&q.a<4&&q.q);
+        if(v.length)B[g.i]=(B[g.i]||[]).concat(v.map(q=>({q:q.q,o:q.o,a:q.a,e:q.e||''})))});
+      ok=true}catch(e){console.error(e)}}
+    if(!ok)fail+=grp.length;
+    done+=grp.length;
+    for(const k of new Set(grp.map(g=>Math.floor(g.i/40))))await saveChunk(id,k);
+    document.getElementById('bp').style.width=(100*done/todo.length)+'%';
+  }
+  app.innerHTML=`<h1>${STOP?'Stopped':'Done'}</h1><div class="card">${done} of ${todo.length} facts processed.${fail?' '+fail+' failed; run Build again to retry them.':''}${STOP&&done<todo.length?' Press Build again anytime to continue.':''}</div><button class="p" onclick="home()">Home</button>`;
+}
+let _idb;
+const idb=()=>_idb||(_idb=new Promise((res,rej)=>{const r=indexedDB.open('examquiz',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
+const kv=async(mode,fn)=>{const d=await idb();return new Promise((res,rej)=>{const t=d.transaction('kv',mode),r=fn(t.objectStore('kv'));t.oncomplete=()=>res(r.result);t.onerror=()=>rej(t.error)})};
+function mkcol(p){return{
+  async get(){const keys=await kv('readonly',s=>s.getAllKeys()),vals=await kv('readonly',s=>s.getAll()),docs=[];keys.forEach((k,i)=>{if(String(k).startsWith(p+'/'))docs.push({id:String(k).slice(p.length+1),data:()=>vals[i]})});return{docs}},
+  doc:id=>({async get(){const v=await kv('readonly',s=>s.get(p+'/'+id));return{exists:v!==undefined,data:()=>v}},async set(v){await kv('readwrite',s=>s.put(JSON.parse(JSON.stringify(v)),p+'/'+id))},async delete(){await kv('readwrite',s=>s.delete(p+'/'+id))}})}}
+const KEY='examquiz_key',getKey=()=>localStorage.getItem(KEY)||'';
+const PROV=()=>localStorage.getItem('examquiz_prov')||'gemini',MODEL=()=>localStorage.getItem('examquiz_model')||(PROV()==='gemini'?'gemini-3.5-flash':'claude-sonnet-5-5');
+const b64=blob=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(',')[1]);f.readAsDataURL(blob)});
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));let lastCall=0;
+function mkSample(){
+  if(!getKey())return null;
+  return{async json(prompt,o={}){
+    const imgs=[];for(const b of(o.images||[]))imgs.push(await b64(b));
+    const g=PROV()==='gemini';let t='';
+    for(let a=0;a<4&&!t;a++){
+      const w=lastCall+(g?4500:0)-Date.now();if(w>0)await sleep(w);lastCall=Date.now();
+      const r=g?await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+MODEL()+':generateContent?key='+encodeURIComponent(getKey()),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt},...imgs.map(d=>({inline_data:{mime_type:'image/jpeg',data:d}}))]}],generationConfig:{responseMimeType:'application/json',maxOutputTokens:16000}})})
+        :await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':getKey(),'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:MODEL(),max_tokens:12000,messages:[{role:'user',content:[...imgs.map(d=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:d}})),{type:'text',text:prompt}]}]})});
+      if(r.status===429||r.status===503){await sleep(15000*(a+1));continue}
+      const j=await r.json();if(!r.ok)throw new Error((j.error&&j.error.message)||r.status);
+      t=g?((j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts)||[]).map(p=>p.text||'').join(''):j.content.map(c=>c.text||'').join('');
+    }
+    if(!t)throw new Error('No answer (limit reached?). Wait a few minutes or try tomorrow.');
+    const m=t.replace(/```json|```/g,'').match(/\[[\s\S]*\]/);return JSON.parse(m?m[0]:t)}}
+}
+function saveKey(){localStorage.setItem(KEY,document.getElementById('ak').value.trim());localStorage.setItem('examquiz_model',document.getElementById('am').value.trim());sample=mkSample();toast('Saved')}
+function setProv(p){localStorage.setItem('examquiz_prov',p);localStorage.removeItem('examquiz_model');settings()}
+function settings(){
+  const p=PROV();
+  app.innerHTML=`<h1>Settings &amp; backup</h1>
+  <div class="card"><h2>AI helper (needed for handwriting and for good questions)</h2>
+  <p class="mut"><b>Free:</b> get a free Google Gemini key at aistudio.google.com → “Get API key”. No card needed. It has daily limits, and Google may use content sent on the free tier to improve its products. <b>Paid alternative:</b> a Claude key from console.anthropic.com. The key stays in this browser.</p>
+  <div class="row"><button class="${p==='gemini'?'p':''}" onclick="setProv('gemini')">Gemini (free)</button><button class="${p==='claude'?'p':''}" onclick="setProv('claude')">Claude (paid)</button></div>
+  <input type="text" id="ak" placeholder="Paste your ${p==='gemini'?'Gemini':'Claude'} API key" value="${esc(getKey())}" style="margin-top:10px">
+  <input type="text" id="am" value="${esc(MODEL())}" style="margin-top:8px"><div class="mut">Model name (change only if it stops working)</div>
+  <div class="row"><button class="p" onclick="saveKey()">Save</button></div></div>
+  <div class="card"><h2>Backup</h2><p class="mut">Topics and progress live in this browser only. Export a backup regularly; Import restores it or moves it to another device.</p><div class="row"><button class="p" onclick="exportAll()">Export backup</button></div><p class="mut" style="margin:12px 0 4px">Import a backup file:</p><input type="file" id="imp" accept=".json" onchange="importAll(this.files[0])"></div><button onclick="home()">Back</button>`;
+}
+async function exportAll(){const keys=await kv('readonly',s=>s.getAllKeys()),vals=await kv('readonly',s=>s.getAll()),o={};keys.forEach((k,i)=>o[k]=vals[i]);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(o)],{type:'application/json'}));a.download='quiz-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click()}
+async function importAll(f){if(!f)return;try{const o=JSON.parse(await f.text());for(const k in o)await kv('readwrite',s=>s.put(o[k],k));topics={};for(const k in BANK)delete BANK[k];(await col.get()).docs.forEach(d=>topics[d.id]=d.data());home()}catch(e){console.error(e);toast('Import failed')}}
+let OCRW=null;
+async function ocrOf(src){
+  if(!window.Tesseract)await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s)});
+  OCRW=OCRW||await Tesseract.createWorker('eng');
+  const d=(await OCRW.recognize(src)).data;
+  return(d.lines||[]).filter(l=>l.confidence>=75).map(l=>l.text.trim()).filter(Boolean);
+}
+async function pageLines(pg){
+  const tc=await pg.getTextContent(),rows=[];
+  tc.items.forEach(it=>{if(!it.str.trim())return;const y=Math.round(it.transform[5]),h=Math.abs(it.transform[3])||it.height;let r=rows.find(r=>Math.abs(r.y-y)<3);if(!r){r={y,h:0,t:[]};rows.push(r)}r.t.push([it.transform[4],it.str]);r.h=Math.max(r.h,h)});
+  rows.sort((a,b)=>b.y-a.y);
+  return rows.map(r=>({t:r.t.sort((a,b)=>a[0]-b[0]).map(x=>x[1]).join(' ').replace(/\s+/g,' ').trim(),h:r.h})).filter(r=>r.t);
+}
+const BUL=/^\s*(?:[•\u2022\u25AA\u25CF\u25E6·*\-–—]|\(?\d{1,3}[.)]|[a-z][.)])\s+/;
+function assemble(lines,hint,fid){
+  const hs=lines.filter(l=>l.h>0).map(l=>l.h).sort((a,b)=>a-b),mh=hs.length?hs[Math.floor(hs.length/2)]:0,nh=hint.map(x=>x.toLowerCase());
+  let cur=fid?topics[fid].name:(hint.length===1?hint[0]:''),pend='';const by={};
+  const junk=t=>{const w=t.match(/[A-Za-z]{3,}/g)||[];if(!w.length)return true;const bad=w.filter(x=>!/[aeiouyAEIOUY]/.test(x)&&x!==x.toUpperCase()).length;return bad/w.length>.3||t.replace(/[^A-Za-z]/g,'').length/t.length<.5};
+  const flush=()=>{if(pend.trim().length>3&&!junk(pend)){const nm=cur||'Untitled',k=nm.toLowerCase();(by[k]=by[k]||{name:nm,facts:[]}).facts.push(pend.trim())}pend=''};
+  for(const l of lines){
+    const t=l.t;if(!t)continue;let head=null;
+    if(!fid){const lc=t.toLowerCase().replace(/[:\-–\s]+$/,'');
+      if(nh.length){const j=nh.findIndex(n=>t.length<80&&(lc===n||(lc.length<n.length+25&&lc.includes(n))));if(j>=0)head=hint[j]}
+      else if(!BUL.test(t)&&t.length<70&&((mh&&l.h>mh*1.2)||(/:$/.test(t)&&t.length<50)||(t===t.toUpperCase()&&/[A-Z]{3}/.test(t)&&(t.length>=8||t.includes(' '))&&!/\d{3,}/.test(t))))head=t.replace(/[:\-–\s]+$/,'')}
+    if(head){flush();cur=head;continue}
+    if(BUL.test(t)){flush();pend=t.replace(BUL,'')}
+    else if(pend&&(/^[a-z]/.test(t)||/[,(\-–:]$|\b(and|or|of|the|to|in|by)$/i.test(pend)))pend+=' '+t;
+    else{flush();pend=t}
+  }
+  flush();return by;
+}
+async function localExtract(pages,hint,fid,st,ocr){
+  const lines=[];let nskip=0;
+  for(let i=0;i<pages.length&&!STOP;i++){
+    const u=pages[i];st.textContent=`Reading page ${i+1} of ${pages.length}…`;
+    try{
+      if(u.text){u.text.split('\n').forEach(t=>lines.push({t:t.trim(),h:0}));continue}
+      let L=[];
+      if(u.pdf){const pg=await u.pdf.getPage(u.p);L=await pageLines(pg);
+        if(L.map(l=>l.t).join('').length<40){
+          if(!ocr){nskip++;continue}
+          st.textContent=`Page ${i+1} is a scan, running OCR (slow)…`;const vp=pg.getViewport({scale:2}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;L=(await ocrOf(c)).map(t=>({t,h:0}))}}
+      else{if(!ocr){nskip++;continue}L=(await ocrOf(u.file)).map(t=>({t,h:0}))}
+      L.forEach(l=>lines.push(l));
+    }catch(e){console.error(e)}
+  }
+  review(assemble(lines,hint,fid),nskip?[nskip+' scanned or handwritten page(s) were NOT read, because free OCR can’t read handwriting. Add a free Gemini key in Settings, then upload them again.']:[]);
+}
+let q='',STOP=0;
+function home(){
+  let h='<h1>🧠 Exam Quiz Trainer</h1>';
+  if(!col)h+='<div class="warn">This browser is blocking storage, so topics will be lost when you close the page.</div>';
+  h+='<div class="row" style="margin:0 0 12px"><button class="p" onclick="addView()">+ Upload notes</button><button onclick="settings()">Settings &amp; backup</button>'+(Object.values(topics).some(t=>(t.bk||0)<t.facts.length)?'<button onclick="build(Object.keys(topics))">Build questions for all topics</button>':'')+'</div>';
+  const n=Object.keys(topics).length;
+  if(n)h+=`<input type="text" id="sq" placeholder="Search ${n} topics…" value="${esc(q)}" oninput="q=this.value;lst()"><div id="lst" style="margin-top:12px"></div>`;
+  else h+='<div class="card mut">No topics yet. Upload a PDF of your notes. It can contain several topics; they’ll be detected and listed here.</div>';
+  app.innerHTML=h;lst();
+}
+function lst(){
+  const el=document.getElementById('lst');if(!el)return;
+  const ids=Object.keys(topics).filter(id=>topics[id].name.toLowerCase().includes(q.trim().toLowerCase())).sort((a,b)=>topics[a].name.localeCompare(topics[b].name));
+  el.innerHTML=(ids.length?'':'<div class="mut">No match.</div>')+ids.map(id=>{const T=topics[id],n=T.facts.length,s=T.facts.reduce((a,f)=>a+f.s,0),c=T.facts.reduce((a,f)=>a+f.c,0),seen=T.facts.filter(f=>f.s).length;
+    return `<div class="card"><h2>${esc(T.name)}</h2><div class="mut">${n} facts · ${seen} tested · accuracy ${s?Math.round(100*c/s)+'%':'–'} · questions ready ${T.bk||0}/${n}</div>
+    <div class="row"><button class="p" onclick="setup('${id}')">Quiz</button>${(T.bk||0)<n?`<button onclick="build(['${id}'])">Build questions</button>`:''}<button onclick="addView('${id}')">Add notes</button><button onclick="del('${id}',this)">Delete</button></div></div>`}).join('');
+}
+async function del(id,b){if(!b.dataset.c){b.dataset.c=1;b.textContent='Tap again to delete';return}
+  const T=topics[id];delete topics[id];delete BANK[id];
+  if(col)try{await col.doc(id).delete();for(let k=0;k<(T.bn||0);k++)await bcol.doc(id+'_'+k).delete()}catch(e){}home()}
+function addView(id){
+  app.innerHTML=`<h1>${id?'Add notes to '+esc(topics[id].name):'Upload notes'}</h1>${sample?'':'<div class="warn">Handwritten notes need the AI helper. Add a free Gemini key in Settings first, or the facts will come out as garbage.</div>'}
+  <p class="mut">Choose one or more PDFs (or photos). A PDF can hold several topics; they’re detected and split automatically. Keep this page open while it reads.</p>
+  <input type="file" id="fl" accept="application/pdf,image/*" multiple>
+  <p class="mut" style="margin:14px 0 4px">If the file button doesn’t open on your phone, copy the text from your PDF and paste it here instead:</p><textarea id="tx" style="min-height:140px" placeholder="Paste notes text here (one or many topics)"></textarea>
+  ${id?'':'<p class="mut" style="margin:14px 0 4px">Optional: list the topics in this file, one per line, to help sort the facts.</p><textarea id="hint" placeholder="Naxalism&#10;Mission Karmayogi"></textarea>'}
+  <label class="mut" style="display:block;margin-top:12px"><input type="checkbox" id="ocr"> Printed (not handwritten) scans: try free OCR</label>
+  <div class="row"><button class="p" id="go" onclick="extract('${id||''}')">Extract facts</button><button id="stop" style="display:none" onclick="STOP=1">Stop &amp; keep what’s done</button><button onclick="home()">Cancel</button></div>
+  <div id="st" class="mut" style="margin-top:12px"></div>`;
+}
+const shrink=f=>new Promise(r=>{const i=new Image();i.onload=()=>{const k=Math.min(1,1800/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);c.toBlob(r,'image/jpeg',.85)};i.src=URL.createObjectURL(f)});
+async function extract(fid){
+  const files=[...document.getElementById('fl').files],txt=document.getElementById('tx').value.trim();if(!files.length&&!txt){toast('Choose a file or paste text first');return}
+  const hint=fid?[]:document.getElementById('hint').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  const st=document.getElementById('st');STOP=0;
+  document.getElementById('go').disabled=true;document.getElementById('stop').style.display='';
+  const pages=[];
+  try{
+    for(const f of files){
+      if(f.type==='application/pdf'){
+        if(!window.pdfjsLib)throw new Error('PDF reader did not load');
+        pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const pdf=await pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;
+        for(let p=1;p<=pdf.numPages;p++)pages.push({pdf,p,label:f.name+' p'+p});
+      }else pages.push({file:f,label:f.name});
+    }
+  }catch(e){console.error(e);st.textContent='Could not open the file: '+(e.message||e);document.getElementById('go').disabled=false;return}
+  for(let i=0;i<txt.length;i+=3500)pages.push({text:txt.slice(i,i+3500),label:'pasted text'});
+  if(!sample)return localExtract(pages,hint,fid,st,document.getElementById('ocr')&&document.getElementById('ocr').checked);
+  const by={},skipped=[];let cur=fid?topics[fid].name:'';
+  const unit=async u=>{
+    if(u.text)return{t:u.text};
+    if(u.file)return{b:await shrink(u.file)};
+    const pg=await u.pdf.getPage(u.p),tc=await pg.getTextContent(),t=tc.items.map(i=>i.str).join(' ').replace(/\s+/g,' ').trim();
+    if(t.length>300)return{t};
+    const vp=pg.getViewport({scale:1.6}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;
+    await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+    return{b:await new Promise(r=>c.toBlob(r,'image/jpeg',.82))};
+  };
+  for(let i=0;i<pages.length&&!STOP;i+=3){
+    const grp=pages.slice(i,i+3);let ok=false;
+    st.textContent=`Reading pages ${i+1}–${i+grp.length} of ${pages.length} · ${Object.keys(by).length} topics found so far`;
+    for(let t=0;t<2&&!ok;t++){
+      try{
+        const us=[];for(const g of grp)us.push(await unit(g));
+        const tx=us.filter(u=>u.t).map(u=>u.t),bl=us.filter(u=>u.b).map(u=>u.b);
+        const pr=`These pages are exam study notes (current affairs / GK), possibly handwritten. Read the handwriting carefully; if a word is truly unclear give your best guess followed by [?]. Extract EVERY individual fact as a short self-contained statement that includes the names, numbers, dates and places needed to understand it alone. Never skip, merge or summarise any detail, however small: make one fact per bullet or line wherever possible, and every name, number, date, place and term in the notes must appear in some fact. Assign each fact to its topic. `+
+          (fid?'':hint.length?`Use ONLY these topic names, exactly as written: ${hint.join(' | ')}. `:'Use the heading the notes sit under as the topic, short and consistent. ')+
+          (cur&&!fid?`The previous pages ended in the topic "${cur}"; keep using it if these pages continue it, and switch only when a new topic heading starts. `:'')+
+          `Return ONLY a JSON array: [{"topic":"...","fact":"..."}]`+(tx.length?'\n\nPAGE TEXT:\n'+tx.join('\n--- next page ---\n'):'')+(bl.length?'\n\n(The attached images are further pages of the same notes.)':'');
+        const r=await sample.json(pr,bl.length?{images:bl,cache:false}:{cache:false});
+        r.forEach(x=>{if(!x||!x.fact)return;const nm=fid?topics[fid].name:String(x.topic||cur||'Untitled').trim(),k=nm.toLowerCase();(by[k]=by[k]||{name:nm,facts:[]}).facts.push(String(x.fact).trim());cur=nm});
+        ok=true;
+      }catch(e){console.error(e)}
+    }
+    if(!ok)skipped.push('Couldn’t read '+grp.map(g=>g.label).join(', ')+'. Upload them again.');
+  }
+  review(by,skipped);
+}
+function review(by,skipped){
+  const g=Object.values(by).map(t=>({name:t.name,facts:[...new Set(t.facts.filter(Boolean))]}));
+  window._pend={g};
+  app.innerHTML=`<h1>Review</h1><div class="mut" style="margin-bottom:12px">${g.length} topic(s) found. Fix any names; topics given the same name are merged.</div>`+
+  (skipped.length?`<div class="warn">⚠ ${esc(skipped.join(' '))}</div>`:'')+
+  g.map((t,i)=>`<div class="card"><div class="row" style="margin:0;flex-wrap:nowrap"><input type="checkbox" id="c${i}" checked><input type="text" id="n${i}" value="${esc(t.name)}"></div><details style="margin-top:8px"><summary class="mut">${t.facts.length} facts</summary><ul class="f">${t.facts.map(f=>'<li>'+esc(f)+'</li>').join('')}</ul></details></div>`).join('')+
+  `<div class="row"><button class="p" onclick="commit()">Save selected</button><button onclick="home()">Discard</button></div>`;
+}
+async function commit(){
+  const g=window._pend.g,m={},tch=[];
+  g.forEach((t,i)=>{if(!document.getElementById('c'+i).checked)return;const nm=document.getElementById('n'+i).value.trim()||t.name,k=nm.toLowerCase();(m[k]=m[k]||{name:nm,facts:[]}).facts.push(...t.facts)});
+  for(const k in m){
+    let id=Object.keys(topics).find(i=>topics[i].name.toLowerCase()===k);
+    if(!id){id=uid8();topics[id]={name:m[k].name,facts:[]}}
+    const have=new Set(topics[id].facts.map(f=>f.t));
+    m[k].facts.forEach(t=>{if(!have.has(t)){have.add(t);topics[id].facts.push({t,s:0,c:0,l:0})}});
+    await save(id);tch.push(id);
+  }
+  if(!sample||!tch.length)return home();
+  app.innerHTML=`<h1>Saved ${tch.length} topic(s)</h1><div class="card">Next step: build the question bank. Claude writes several differently worded questions for every fact, once, and they are stored. After that, quizzes and revision run on the stored questions and don’t use Claude at all.<div class="row"><button class="p" id="bb">Build questions now</button><button onclick="home()">Later</button></div></div>`;
+  document.getElementById('bb').onclick=()=>build(tch);
+}
+const STOPW=new Set('The A An In On At Of And For To By With From As It Its This That These Those He She They His Her Their After Before During Also Is Was Were Are Be Been Has Have Had Which Who Whom Not No Under Over Since Between'.split(' '));
+function cands(t){
+  const out=[],used=[];
+  const add=(s,x,c)=>{const e=s+x.length;if(used.some(u=>s<u[1]&&e>u[0]))return;used.push([s,e]);out.push({s,e,x,c})};
+  for(const m of t.matchAll(/\b\d[\d,.]*\d\b|\b\d\b/g))add(m.index,m[0],/^(1[0-9]|20)\d\d$/.test(m[0])?'year':'num');
+  for(const m of t.matchAll(/\b[A-Z][\w'’-]*(?:\s+(?:of|and|the|for|de)\s+[A-Z][\w'’-]*|\s+[A-Z][\w'’-]*)*/g)){
+    let x=m[0],s=m.index;const fw=x.split(' ')[0];
+    if(STOPW.has(fw)){if(x.indexOf(' ')<0)continue;x=x.slice(fw.length+1);s+=fw.length+1}
+    if(s===0&&x.indexOf(' ')<0&&!/^[A-Z][A-Z0-9&\-]{1,9}$/.test(x))continue;
+    add(s,x,MONTHS.has(x.toLowerCase())?'month':(/^[A-Z][A-Z0-9&\-]{1,9}$/.test(x)&&/[A-Z]{2}/.test(x))?'acr':'cap');
+  }
+  return out;
+}
+const nextOf=(t,e)=>(t.slice(e).trim().split(/\s+/)[0]||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const prevOf=(t,s)=>(t.slice(0,s).trim().split(/\s+/).pop()||'').toLowerCase();
+const MONTHS=new Set('january february march april may june july august september october november december'.split(' '));
+const SIGS={place:/\b(pradesh|nadu|bengal|state|district|city|island|islands|sea|ocean|river|mountain|mountains|hills|valley|lake|fort|bay|strait|plateau|desert|port|airport|dam|canal|temple|cave|nagar|garh|peak|range|coast|gulf|basin|sanctuary|park|reserve|delta|pass|plain|forest)\b/i,
+ org:/\b(commission|committee|ministry|council|authority|agency|organisation|organization|board|bank|institute|centre|center|corporation|company|court|party|force|army|forum|union|association|society|department|directorate|bureau|university|trust|federation|league|group|cell|wing|command|mission|scheme|yojana|abhiyan|programme|program|initiative|campaign|project|fund|portal)\b/i,
+ law:/\b(act|bill|article|amendment|code|rules|treaty|pact|agreement|convention|doctrine|resolution|judgment|section|schedule|clause)\b/i,
+ person:/\b(shri|smt|dr|mr|mrs|ms|justice|prof|sri|late|chief|minister|president|governor|general|admiral|captain)\b/i};
+const PLACES=new Set(('andhra pradesh|arunachal pradesh|assam|bihar|chhattisgarh|goa|gujarat|haryana|himachal pradesh|jharkhand|karnataka|kerala|madhya pradesh|maharashtra|manipur|meghalaya|mizoram|nagaland|odisha|punjab|rajasthan|sikkim|tamil nadu|telangana|tripura|uttar pradesh|uttarakhand|west bengal|delhi|new delhi|jammu|kashmir|ladakh|puducherry|chandigarh|lakshadweep|andaman|nicobar|india|china|pakistan|nepal|bhutan|bangladesh|sri lanka|myanmar|afghanistan|iran|iraq|israel|russia|ukraine|france|germany|italy|spain|britain|england|scotland|japan|korea|australia|canada|brazil|argentina|egypt|nigeria|kenya|ethiopia|south africa|saudi arabia|turkey|indonesia|malaysia|singapore|thailand|vietnam|philippines|mongolia|maldives|mauritius|america|asia|africa|europe|antarctica|arctic|mumbai|kolkata|chennai|bengaluru|bangalore|hyderabad|ahmedabad|pune|jaipur|lucknow|kanpur|nagpur|patna|bhopal|indore|surat|varanasi|amritsar|ranchi|raipur|guwahati|shimla|dehradun|srinagar|visakhapatnam|kochi|thiruvananthapuram|sriharikota|mysuru|coimbatore|ganga|ganges|yamuna|brahmaputra|godavari|krishna|kaveri|narmada|indus|himalaya|himalayas|thar|deccan').split('|'));
+const PPREV=new Set('minister shri dr mr mrs smt justice prof president general chief leader founder chairman chairperson governor secretary director scientist author poet architect sir late'.split(' ')),PNEXT=new Set('born died said wrote founded elected appointed served led headed became won received'.split(' '));
+const CEL=new Set('mars venus jupiter saturn mercury neptune uranus moon earth sun pluto'.split(' '));
+const typeOfSet=(x,set)=>{const k=sigOf(x);if(k!=='other')return k;const lw=x.toLowerCase();if(CEL.has(lw))return 'celestial';if(PLACES.has(lw)||x.split(' ').some(w=>w.length>3&&PLACES.has(w.toLowerCase())))return 'place';
+  for(const v of set||[]){if((v[0]==='p'&&PPREV.has(v.slice(2)))||(v[0]==='n'&&PNEXT.has(v.slice(2))))return 'person'}return 'other'};
+const sigOf=x=>{for(const k in SIGS)if(SIGS[k].test(x))return k;return 'other'};
+function poolOf(ids){const P={year:new Map(),num:new Map(),cap:new Map(),w:new Map(),month:new Map(),acr:new Map()};
+  ids.forEach(id=>topics[id].facts.forEach(f=>{cands(f.t).forEach(c=>{const m=P[c.c];if(!m.has(c.x))m.set(c.x,new Set());m.get(c.x).add('p:'+prevOf(f.t,c.s));m.get(c.x).add('n:'+nextOf(f.t,c.e))});(f.t.match(/\b[a-z]{7,}\b/g)||[]).forEach(w=>{if(!P.w.has(w))P.w.set(w,new Set())})}));return P}
+const keys=m=>[...(m||new Map()).keys()];
+const numv=x=>parseFloat(x.replace(/,/g,''));
+function distract(c,t){
+  const cls=c.c,wc=x=>x.split(' ').length,norm=v=>String(v).toLowerCase().replace(/[^a-z0-9]/g,'').replace(/^0+(?=\d)/,'');
+  let pool=keys(S.P.T[cls]).filter(x=>x!==c.x);
+  if(pool.length<8)pool=[...new Set([...pool,...keys(S.P.G[cls]).filter(x=>x!==c.x)])];
+  const nb=norm(c.x);
+  pool=pool.filter(v=>{const a=norm(v);if(!a||a===nb)return false;if(cls!=='year'&&cls!=='num'&&(a.includes(nb)||nb.includes(a)||t.toLowerCase().includes(v.toLowerCase())))return false;return true});
+  let d=[];
+  if(cls==='year'||cls==='num'){
+    const n=numv(c.x),dec=(c.x.split('.')[1]||'').length,fmt=v=>c.x.includes(',')?Math.round(v).toLocaleString('en-IN'):(dec?v.toFixed(dec):String(Math.round(v)));
+    const have=new Set([n]);
+    d=pool.filter(x=>!isNaN(numv(x))&&numv(x)!==n).sort((a,b)=>Math.abs(numv(a)-n)-Math.abs(numv(b)-n)).filter(x=>{if(have.has(numv(x)))return false;have.add(numv(x));return true}).slice(0,2);
+    const st=cls==='year'?[-10,-5,-3,-2,-1,1,2,3,5,10]:[-1,1,-2,2,-n/2,n,n/4,10,-10];
+    shuffle(st.slice()).forEach(v=>{if(d.length<3){const r=cls==='year'?n+v:(Math.abs(n)>20?n+v*Math.max(1,Math.round(Math.abs(n)/10)):n+v);const f=fmt(r),rv=numv(f);if(!have.has(rv)&&r>0){have.add(rv);d.push(f)}}});
+  }else if(cls==='month'){
+    d=shuffle([...MONTHS].map(m=>m[0].toUpperCase()+m.slice(1)).filter(m=>m!==c.x)).slice(0,3);
+  }else{
+    const pc=prevOf(t,c.s),setOf=a=>(S.P.T[cls]&&S.P.T[cls].get(a))||(S.P.G[cls]&&S.P.G[cls].get(a))||new Set();
+    const cs=new Set(['p:'+pc,'n:'+nextOf(t,c.e)]),ty=typeOfSet(c.x,cs);
+    if(cls==='cap')pool=pool.filter(a=>typeOfSet(a,setOf(a))===ty&&Math.abs(wc(a)-wc(c.x))<=2);
+    const hit=a=>((S.P.T[cls]&&S.P.T[cls].get(a)&&S.P.T[cls].get(a).has('p:'+pc))||(S.P.G[cls]&&S.P.G[cls].get(a)&&S.P.G[cls].get(a).has('p:'+pc)));
+    const sc=a=>(hit(a)?-5:0)+Math.abs(wc(a)-wc(c.x))*2+Math.abs(a.length-c.x.length)/5+Math.random()*1.5;
+    d=pool.map(a=>[a,sc(a)]).sort((a,b)=>a[1]-b[1]).slice(0,3).map(a=>a[0]);
+  }
+  d=[...new Set(d)];
+  return d.length>=3?d.slice(0,3):null;
+}
+function corrupt(t){const cs=cands(t);if(!cs.length)return null;const c=cs[Math.floor(Math.random()*cs.length)],d=distract(c,t);return d?t.slice(0,c.s)+d[0]+t.slice(c.e):null}
+const yrs=t=>t.match(/\b(?:1[0-9]|20)\d\d\b/g)||[];
+function consider(x){
+  const F=topics[S.id].facts,n=Math.random()<.5?2:3;
+  const oth=shuffle(F.map((f,i)=>i).filter(i=>i!==x.i)).slice(0,n-1);if(oth.length<n-1)return null;
+  let st=[x.f.t,...oth.map(i=>F[i].t)].map(t=>{let ok=Math.random()<.5,txt=t;if(!ok){const b=corrupt(t);if(b)txt=b;else ok=true}return{t,txt,ok}});
+  st=shuffle(st);const k=st.filter(s=>s.ok).length;
+  const body=st.map((s,i)=>(i+1)+'. '+s.txt).join('\n');let q,o,a;
+  if(n===2){q='Consider the following statements:\n'+body+'\nWhich of the above is/are correct?';o=['1 only','2 only','Both 1 and 2','Neither 1 nor 2'];a=k===2?2:k===0?3:(st[0].ok?0:1)}
+  else{q='Consider the following statements:\n'+body+'\nHow many of the above statements are correct?';o=['Only one','Only two','All three','None'];a=k===1?0:k===2?1:k===3?2:3}
+  return{it:x,q,o,a,e:st.map((s,i)=>(i+1)+'. '+(s.ok?'Correct':'Incorrect — your notes say: '+s.t)).join('\n')}
+}
+function order(x){
+  const F=topics[S.id].facts,y0=yrs(x.f.t);if(y0.length!==1)return null;
+  const seen=new Set([y0[0]]),pick=[];
+  for(const i of shuffle(F.map((f,i)=>i).filter(i=>i!==x.i&&yrs(F[i].t).length===1))){const y=yrs(F[i].t)[0];if(!seen.has(y)){seen.add(y);pick.push(i)}if(pick.length===3)break}
+  if(pick.length<3)return null;
+  const it=shuffle([{t:x.f.t,y:+y0[0]},...pick.map(i=>({t:F[i].t,y:+yrs(F[i].t)[0]}))]),L='ABCD';
+  const cor=it.map((v,i)=>[v.y,L[i]]).sort((a,b)=>a[0]-b[0]).map(v=>v[1]);
+  const sw=j=>{const c=cor.slice();[c[j],c[j+1]]=[c[j+1],c[j]];return c.join('–')},ans=cor.join('–'),o=shuffle([ans,sw(0),sw(1),sw(2)]);
+  return{it:x,q:'Arrange the following in chronological order (earliest first):\n'+it.map((v,i)=>L[i]+'. '+v.t).join('\n'),o,a:o.indexOf(ans),e:'Correct order: '+ans+'. Years: '+it.map((v,i)=>L[i]+' = '+v.y).join(', ')}
+}
+const W={blank:45,recall:40,consider:5,order:5,correct:2,not:2,about:1};
+const pickTypes=()=>Object.keys(W).map(k=>[k,-Math.log(Math.random())/W[k]]).sort((a,b)=>a[1]-b[1]).map(a=>a[0]);
+const VERBS=/\s(is|was|are|were|has|have|had|means|refers to|known as|launched|started|began|founded|introduced|established|announced|signed|passed|declared|spans|covers|aims|commenced|adopted|merged|inaugurated|released|approved|awarded|appointed|elected|won|hosted|signed)\s/i;
+function split(t){const m=VERBS.exec(t);if(!m||m.index<3||m.index>70)return null;const rest=t.slice(m.index+m[0].length).trim();return rest.length<8?null:{sub:t.slice(0,m.index).trim(),verb:m[1],pred:t.slice(m.index).trim()}}
+function recall(x){
+  const F=topics[S.id].facts,a=split(x.f.t);if(!a)return null;
+  const hasY=p=>/\b(?:1[0-9]|20)\d\d\b/.test(p),seen=new Set([a.pred]),ot=[],ov=p=>cands(a.pred).some(c=>c.x.length>2&&p.includes(c.x));
+  shuffle(F.map((f,i)=>i).filter(i=>i!==x.i)).forEach(i=>{const b=split(F[i].t);if(b&&!seen.has(b.pred)&&!ov(b.pred)){seen.add(b.pred);ot.push([b.pred,Math.abs(b.pred.length-a.pred.length)/10+(hasY(b.pred)===hasY(a.pred)?0:3)+(b.pred.split(' ')[0].toLowerCase()===a.pred.split(' ')[0].toLowerCase()?-2:0)+Math.random()*2])}});
+  if(ot.length<3)return null;
+  const d=ot.sort((p,q)=>p[1]-q[1]).slice(0,3).map(v=>v[0]),o=shuffle([a.pred,...d]);
+  return{it:x,q:'Complete the statement correctly:\n'+a.sub+' …',o,a:o.indexOf(a.pred),e:'Your notes say: '+x.f.t}
+}
+function localQ(x){
+  const t=x.f.t,cs=cands(t),ct=cs.length?cs:[...t.matchAll(/\b[a-z]{7,}\b/g)].map(m=>({s:m.index,e:m.index+m[0].length,x:m[0],c:'w'}));
+  for(const ty of pickTypes()){
+    if(ty==='consider'){const q=consider(x);if(q)return q;continue}
+    if(ty==='order'){const q=order(x);if(q)return q;continue}
+    if(ty==='recall'){const q=recall(x);if(q)return q;continue}
+    if(!ct.length)continue;
+    const c=ct[Math.floor(Math.random()*ct.length)],d=distract(c,t);if(!d)continue;
+    const swap=v=>t.slice(0,c.s)+v+t.slice(c.e);
+    if(ty==='blank'){const o=shuffle([c.x,...d]);return{it:x,q:'Fill in the blank:\n'+swap('_____'),o,a:o.indexOf(c.x),e:'Correct: '+t}}
+    if(ty==='correct'){const o=shuffle([t,...d.map(swap)]);return{it:x,q:'Which of the following statements is correct?',o,a:o.indexOf(t),e:'Correct statement: '+t}}
+    if(ty==='about'){if(c.c==='w')continue;const ot=shuffle(topics[S.id].facts.filter((f,i)=>i!==x.i&&!f.t.includes(c.x)).map(f=>f.t)).slice(0,3);if(ot.length<3)continue;const o=shuffle([t,...ot]);return{it:x,q:'Which of the following statements is about “'+c.x+'”?',o,a:o.indexOf(t),e:'Your notes say: '+t}}
+    const oth=shuffle(topics[S.id].facts.filter((f,i)=>i!==x.i).map(f=>f.t)).slice(0,3);if(oth.length<3)continue;
+    const bad=swap(d[0]),o=shuffle([bad,...oth]);
+    return{it:x,q:'Which of the following statements is NOT correct?',o,a:o.indexOf(bad),e:'That option was altered. Your notes say: '+t}
+  }
+  return null;
+}
+function genLocal(items){const out=[];items.forEach(x=>{try{const q=localQ(x);if(q)out.push(q)}catch(e){console.error(e)}});return shuffle(out)}
+let MODE='bank';
+function setup(id){
+  const T=topics[id],n=T.facts.length;if(!(T.bk>0)&&MODE==='bank')MODE='quick';
+  app.innerHTML=`<h1>${esc(T.name)}</h1><div class="card"><div class="mut">Question source</div>
+  <div class="row"><button class="${MODE==='bank'?'p':''}" onclick="MODE='bank';setup('${id}')">Claude-written, stored (${T.bk||0}/${n} ready)</button><button class="${MODE==='quick'?'p':''}" onclick="MODE='quick';setup('${id}')">Instant · no Claude · unlimited</button></div>
+  <div class="mut" style="margin-top:14px">Timer per question</div><div class="row">${[15,20,30,0].map(v=>`<button class="${TSEC()===v?'p':''}" onclick="localStorage.setItem('examquiz_t',${v});setup('${id}')">${v?v+'s':'Off'}</button>`).join('')}</div>
+  <div class="mut" style="margin-top:14px">How many facts this round? Weak and not-recently-tested facts come first.</div>
+  <div class="row">${[10,20,40,n].filter((v,i,a)=>v<=n&&a.indexOf(v)===i).map(v=>`<button class="p" onclick="practice('${id}',${v})">${v===n?'All '+n:v}</button>`).join('')}</div></div><button onclick="home()">Back</button>`;
+}
+let TM=null;const TSEC=()=>{const v=localStorage.getItem('examquiz_t');return v===null?15:+v};
+function startTimer(){clearInterval(TM);const T=TSEC();if(!T)return;let left=T;const tick=()=>{const el=document.getElementById('tm');if(!el){clearInterval(TM);return}el.textContent='⏱ '+left+'s';el.style.color=left<=5?'var(--no)':'var(--mut)';if(left--<=0){clearInterval(TM);pick(-1)}};tick();TM=setInterval(tick,1000)}
+const score=f=>f.s?f.c/f.s-Math.min((Date.now()-f.l)/864e5,10)/20+Math.random()*.1:-2+Math.random()*.1;
+const STY=['direct recall','"which of the following is NOT / incorrect" twist','assertion-style statement to judge','fill in the blank using ____','scenario or context-based wording','reverse question (given the detail, identify the name/place/number)'];
+async function genLive(items){
+  const seed=Math.random().toString(36).slice(2,6);
+  const list=items.map((x,k)=>`${k+1}. ${x.f.t}`).join('\n');
+  const pr=`You are a tough exam-paper setter for Indian competitive exams. For each numbered fact write ONE multiple-choice question that tests exactly that fact. Mix difficulty across the batch (a few easy, mostly medium and hard). Use a different style for each, choosing from: ${STY.join('; ')}. About one in five should be fill-in-the-blank. Each question has exactly 4 options. Distractors must be plausible and close to the right answer (same category, similar names, dates, numbers, places), never obviously wrong, and only one option is correct. Do not reuse wording from the fact verbatim in a way that gives the answer away. "e" is a 2-3 sentence explanation: state the correct fact fully and say briefly why the closest wrong options are wrong. Variation seed: ${seed}. Return ONLY a JSON array: [{"i":<fact number>,"q":"...","o":["..","..","..",".."],"a":<index 0-3 of correct option>,"e":"..."}]\n\nFACTS:\n${list}`;
+  for(let t=0;t<2;t++){
+    try{
+      const r=await sample.json(pr,{cache:false}),out=[];
+      r.forEach(q=>{const it=items[q.i-1];if(!it||!Array.isArray(q.o)||q.o.length!==4||!(q.a>=0&&q.a<4))return;
+        const right=q.o[q.a],o=shuffle(q.o.slice());out.push({it,q:q.q,o,a:o.indexOf(right),e:q.e})});
+      if(out.length)return shuffle(out);
+    }catch(e){console.error(e)}
+  }
+  throw new Error('failed');
+}
+async function genBatch(items){
+  const out=[],live=[],B=BANK[S.id]||{};
+  items.forEach(x=>{const a=B[x.i];
+    if(a&&a.length){const b=a[(x.f.v||0)%a.length];x.f.v=(x.f.v||0)+1;const right=b.o[b.a],o=shuffle(b.o.slice());out.push({it:x,q:b.q,o,a:o.indexOf(right),e:b.e})}
+    else live.push(x)});
+  if(S.mode==='quick')return genLocal(items);
+  if(live.length){if(sample){try{out.push(...await genLive(live))}catch(e){out.push(...genLocal(live))}}else out.push(...genLocal(live))}
+  if(!out.length)throw new Error('none');
+  return shuffle(out);
+}
+async function practice(id,n){
+  app.innerHTML='<div class="mut" style="padding:40px 0;text-align:center">Loading…</div>';
+  await loadBank(id);
+  const fs=topics[id].facts.map((f,i)=>({f,i})).sort((a,b)=>score(a.f)-score(b.f)).slice(0,n);shuffle(fs);
+  const bs=[];for(let i=0;i<fs.length;i+=5)bs.push(fs.slice(i,i+5));
+  const pre={};
+  S={id,mode:MODE,P:{T:poolOf([id]),G:poolOf(Object.keys(topics))},pre,total:fs.length,bs,get:k=>pre[k]||(pre[k]=genBatch(bs[k])),k:0,qs:[],qi:0,done:0,right:0,miss:[]};
+  nextQ();
+}
+async function nextQ(){
+  if(S.qi>=S.qs.length){
+    if(S.k>=S.bs.length)return finish();
+    app.innerHTML='<div class="mut" style="padding:40px 0;text-align:center">Writing fresh questions…</div>';
+    try{S.qs=await S.get(S.k);S.qi=0;S.k++;if(S.k<S.bs.length)S.get(S.k).catch(()=>{})}
+    catch(e){app.innerHTML='<div class="warn">Couldn’t write questions.</div><button class="p" onclick="retry()">Try again</button> <button onclick="finish()">End round</button>';return}
+  }
+  const q=S.qs[S.qi];
+  app.innerHTML=`<div class="bar"><div style="width:${100*S.done/S.total}%"></div></div><div class="row" style="justify-content:space-between;margin:0"><div class="mut">Question ${S.done+1} of ${S.total}</div><div id="tm" style="font-weight:600"></div></div>
+  <div class="card"><div style="font-weight:600;white-space:pre-wrap">${esc(q.q)}</div>${q.o.map((o,i)=>`<button class="opt" onclick="pick(${i})">${'ABCD'[i]}. ${esc(o)}</button>`).join('')}<div id="ex"></div></div>`;
+  startTimer();
+}
+function retry(){delete S.pre[S.k];nextQ()}
+function pick(i){
+  const q=S.qs[S.qi];if(q.d)return;q.d=1;clearInterval(TM);
+  const ok=i===q.a,f=q.it.f;
+  document.querySelectorAll('.opt').forEach((b,j)=>{b.disabled=true;if(j===q.a)b.classList.add('ok');else if(j===i)b.classList.add('no')});
+  f.s++;if(ok){f.c++;S.right++}else S.miss.push(f.t);f.l=Date.now();S.done++;
+  document.getElementById('ex').innerHTML=`<div class="exp"><b style="color:var(--${ok?'ok':'no'})">${ok?'Correct ✓':(i<0?'Time’s up ⏱':'Wrong ✗')+' — answer: '+'ABCD'[q.a]}</b><p>${esc(q.e||q.it.f.t)}</p><div class="mut">Source fact: ${esc(f.t)}</div></div><div class="row"><button class="p" onclick="S.qi++;nextQ()">${S.done>=S.total?'See results':'Next'}</button></div>`;
+}
+async function finish(){
+  await save(S.id);
+  app.innerHTML=`<h1>Round complete</h1><div class="card"><h2>${S.right} / ${S.done} correct</h2>${S.miss.length?'<div class="mut">Facts to revise:</div><ul class="f">'+S.miss.map(m=>'<li>'+esc(m)+'</li>').join('')+'</ul>':'<div>Perfect round!</div>'}</div>
+  <div class="row"><button class="p" onclick="setup('${S.id}')">Another round</button><button onclick="home()">Home</button></div>`;
+}
+init();
+</script></body></html>
