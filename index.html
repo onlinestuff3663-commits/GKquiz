@@ -4,30 +4,37 @@
 <title>Exam Quiz Trainer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
-:root{--bg:#faf9f7;--fg:#1f1d1a;--mut:#6b675f;--card:#fff;--bd:#e0dbd2;--ac:#c2410c;--ok:#166534;--okb:#dcfce7;--no:#991b1b;--nob:#fee2e2;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1a1917;--fg:#ece9e2;--mut:#a09b90;--card:#262421;--bd:#3a3733;--ac:#fb923c;--ok:#86efac;--okb:#14351f;--no:#fca5a5;--nob:#401717;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#1a1917;--fg:#ece9e2;--mut:#a09b90;--card:#262421;--bd:#3a3733;--ac:#fb923c;--ok:#86efac;--okb:#14351f;--no:#fca5a5;--nob:#401717;color-scheme:dark}
+:root{--bg:#f3f6fb;--fg:#1e293b;--mut:#64748b;--card:#fff;--bd:#dbe3ee;--ac:#2563eb;--onac:#fff;--acl:#e8f0fe;--ok:#15803d;--okb:#e7f7ed;--no:#b91c1c;--nob:#fdeceb;--sh:0 1px 2px rgba(15,23,42,.06),0 6px 18px rgba(15,23,42,.06);color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root[data-theme="dark"]{--bg:#0f172a;--fg:#e2e8f0;--mut:#94a3b8;--card:#1e293b;--bd:#334155;--ac:#60a5fa;--onac:#0f172a;--acl:#1e3a5f;--ok:#86efac;--okb:#12351f;--no:#fca5a5;--nob:#3f1d1d;--sh:none;color-scheme:dark}
 *{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
-#app{max-width:640px;margin:0 auto;padding:16px}
-h1{font-size:22px;margin:4px 0 14px}h2{font-size:18px;margin:0 0 8px}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#app{max-width:640px;margin:0 auto;padding:16px 16px 40px}
+h1{font-size:22px;margin:0}h2{font-size:18px;margin:0 0 6px}
+.hdr{display:flex;align-items:center;gap:12px;margin:4px 0 18px}.logo{width:46px;height:46px;border-radius:14px;background:var(--acl);display:grid;place-items:center;font-size:24px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:var(--sh)}
 .mut{color:var(--mut);font-size:14px}
-button,.btn{font:inherit;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:10px;padding:10px 14px;cursor:pointer}
-button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
-button:disabled{opacity:.5}
-.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-input[type=text],textarea{width:100%;min-width:0;font:inherit;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}
+button,.btn{font:inherit;font-weight:600;border:1.5px solid var(--bd);background:var(--card);color:var(--fg);border-radius:12px;padding:10px 16px;cursor:pointer}
+button:hover{border-color:var(--ac)}
+button.p{background:var(--ac);color:var(--onac);border-color:var(--ac)}
+button:disabled{opacity:.6;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+input[type=text],textarea{width:100%;min-width:0;font:inherit;padding:11px 12px;border-radius:12px;border:1.5px solid var(--bd);background:var(--card);color:var(--fg)}
+input[type=text]:focus,textarea:focus{outline:none;border-color:var(--ac)}
 textarea{min-height:90px}
-.opt{display:block;width:100%;text-align:left;margin-top:8px;padding:12px}
-.opt.ok{background:var(--okb);border-color:var(--ok);color:var(--ok)}
-.opt.no{background:var(--nob);border-color:var(--no);color:var(--no)}
-.exp{margin-top:12px;padding:12px;border-radius:10px;background:var(--bg);border:1px solid var(--bd)}
-.bar{height:6px;background:var(--bd);border-radius:3px;overflow:hidden;margin-bottom:12px}.bar>div{height:100%;background:var(--ac)}
-.warn{background:var(--nob);color:var(--no);padding:10px;border-radius:10px;margin-bottom:12px}
+.qt{font-size:18px;line-height:1.55;font-weight:600;white-space:pre-wrap;margin-bottom:6px}
+.opt{display:flex;align-items:flex-start;gap:12px;width:100%;text-align:left;margin-top:10px;padding:13px 14px;font-weight:500;line-height:1.4}
+.ltr{flex:none;width:28px;height:28px;border-radius:50%;background:var(--acl);color:var(--ac);display:grid;place-items:center;font-weight:700;font-size:14px}
+.opt.ok{background:var(--okb);border-color:var(--ok)}.opt.ok .ltr{background:var(--ok);color:#fff}
+.opt.no{background:var(--nob);border-color:var(--no)}.opt.no .ltr{background:var(--no);color:#fff}
+.exp{margin-top:14px;padding:13px 14px;border-radius:12px;background:var(--bg);border-left:4px solid var(--ac)}
+.exp p{margin:6px 0}
+.bar{height:8px;background:var(--bd);border-radius:4px;overflow:hidden;margin-bottom:12px}.bar>div{height:100%;background:var(--ac);border-radius:4px;transition:width .3s}
+#tm{background:var(--acl);color:var(--ac);padding:3px 12px;border-radius:999px;font-size:15px}
+.warn{background:var(--nob);color:var(--no);padding:11px 13px;border-radius:12px;margin-bottom:12px}
 ul.f{padding-left:18px;max-height:260px;overflow:auto;font-size:14px}
 </style></head><body><div id="app">Loading…</div>
 <script>
+document.documentElement.dataset.theme=localStorage.getItem('examquiz_theme')||'light';
 const app=document.getElementById('app');
 let db,sample,col,bcol,uid,topics={},S=null;
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -108,6 +115,7 @@ function setProv(p){localStorage.setItem('examquiz_prov',p);localStorage.removeI
 function settings(){
   const p=PROV();
   app.innerHTML=`<h1>Settings &amp; backup</h1>
+  <div class="card"><h2>Appearance</h2><div class="row" style="margin-top:6px"><button class="${document.documentElement.dataset.theme==='light'?'p':''}" onclick="localStorage.setItem('examquiz_theme','light');document.documentElement.dataset.theme='light';settings()">Light</button><button class="${document.documentElement.dataset.theme==='dark'?'p':''}" onclick="localStorage.setItem('examquiz_theme','dark');document.documentElement.dataset.theme='dark';settings()">Dark</button></div></div>
   <div class="card"><h2>AI helper (needed for handwriting and for good questions)</h2>
   <p class="mut"><b>Free:</b> get a free Google Gemini key at aistudio.google.com → “Get API key”. No card needed. It has daily limits, and Google may use content sent on the free tier to improve its products. <b>Paid alternative:</b> a Claude key from console.anthropic.com. The key stays in this browser.</p>
   <div class="row"><button class="${p==='gemini'?'p':''}" onclick="setProv('gemini')">Gemini (free)</button><button class="${p==='claude'?'p':''}" onclick="setProv('claude')">Claude (paid)</button></div>
@@ -168,7 +176,7 @@ async function localExtract(pages,hint,fid,st,ocr){
 }
 let q='',STOP=0;
 function home(){
-  let h='<h1>🧠 Exam Quiz Trainer</h1>';
+  let h='<div class="hdr"><div class="logo">📚</div><div><h1>Exam Prep</h1><div class="mut">Active recall trainer</div></div></div>';
   if(!col)h+='<div class="warn">This browser is blocking storage, so topics will be lost when you close the page.</div>';
   h+='<div class="row" style="margin:0 0 12px"><button class="p" onclick="addView()">+ Upload notes</button><button onclick="settings()">Settings &amp; backup</button>'+(Object.values(topics).some(t=>(t.bk||0)<t.facts.length)?'<button onclick="build(Object.keys(topics))">Build questions for all topics</button>':'')+'</div>';
   const n=Object.keys(topics).length;
@@ -292,6 +300,10 @@ const PPREV=new Set('minister shri dr mr mrs smt justice prof president general 
 const CEL=new Set('mars venus jupiter saturn mercury neptune uranus moon earth sun pluto'.split(' '));
 const typeOfSet=(x,set)=>{const k=sigOf(x);if(k!=='other')return k;const lw=x.toLowerCase();if(CEL.has(lw))return 'celestial';if(PLACES.has(lw)||x.split(' ').some(w=>w.length>3&&PLACES.has(w.toLowerCase())))return 'place';
   for(const v of set||[]){if((v[0]==='p'&&PPREV.has(v.slice(2)))||(v[0]==='n'&&PNEXT.has(v.slice(2))))return 'person'}return 'other'};
+const STATES=new Set('andhra pradesh|arunachal pradesh|assam|bihar|chhattisgarh|goa|gujarat|haryana|himachal pradesh|jharkhand|karnataka|kerala|madhya pradesh|maharashtra|manipur|meghalaya|mizoram|nagaland|odisha|punjab|rajasthan|sikkim|tamil nadu|telangana|tripura|uttar pradesh|uttarakhand|west bengal|delhi|jammu|kashmir|ladakh|puducherry|chandigarh|lakshadweep|andaman|nicobar'.split('|'));
+const COUNTRIES=new Set('india|china|pakistan|nepal|bhutan|bangladesh|sri lanka|myanmar|afghanistan|iran|iraq|israel|russia|ukraine|france|germany|italy|spain|britain|england|scotland|japan|korea|australia|canada|brazil|argentina|egypt|nigeria|kenya|ethiopia|south africa|saudi arabia|turkey|indonesia|malaysia|singapore|thailand|vietnam|philippines|mongolia|maldives|mauritius|america'.split('|'));
+const WATERS=/\b(river|sea|ocean|bay|lake|gulf|strait|ganga|ganges|yamuna|brahmaputra|godavari|krishna|kaveri|narmada|indus)\b/i;
+const placeKind=x=>{const l=x.toLowerCase();return STATES.has(l)||/pradesh|nadu|bengal/.test(l)?'state':COUNTRIES.has(l)?'country':WATERS.test(l)?'water':PLACES.has(l)?'city':'other'};
 const sigOf=x=>{for(const k in SIGS)if(SIGS[k].test(x))return k;return 'other'};
 function poolOf(ids){const P={year:new Map(),num:new Map(),cap:new Map(),w:new Map(),month:new Map(),acr:new Map()};
   ids.forEach(id=>topics[id].facts.forEach(f=>{cands(f.t).forEach(c=>{const m=P[c.c];if(!m.has(c.x))m.set(c.x,new Set());m.get(c.x).add('p:'+prevOf(f.t,c.s));m.get(c.x).add('n:'+nextOf(f.t,c.e))});(f.t.match(/\b[a-z]{7,}\b/g)||[]).forEach(w=>{if(!P.w.has(w))P.w.set(w,new Set())})}));return P}
@@ -307,21 +319,23 @@ function distract(c,t){
   if(cls==='year'||cls==='num'){
     const n=numv(c.x),dec=(c.x.split('.')[1]||'').length,fmt=v=>c.x.includes(',')?Math.round(v).toLocaleString('en-IN'):(dec?v.toFixed(dec):String(Math.round(v)));
     const have=new Set([n]);
-    d=pool.filter(x=>!isNaN(numv(x))&&numv(x)!==n).sort((a,b)=>Math.abs(numv(a)-n)-Math.abs(numv(b)-n)).filter(x=>{if(have.has(numv(x)))return false;have.add(numv(x));return true}).slice(0,2);
-    const st=cls==='year'?[-10,-5,-3,-2,-1,1,2,3,5,10]:[-1,1,-2,2,-n/2,n,n/4,10,-10];
-    shuffle(st.slice()).forEach(v=>{if(d.length<3){const r=cls==='year'?n+v:(Math.abs(n)>20?n+v*Math.max(1,Math.round(Math.abs(n)/10)):n+v);const f=fmt(r),rv=numv(f);if(!have.has(rv)&&r>0){have.add(rv);d.push(f)}}});
+    d=pool.filter(x=>!isNaN(numv(x))&&numv(x)!==n).sort((a,b)=>Math.abs(numv(a)-n)-Math.abs(numv(b)-n)).filter(x=>{if(have.has(numv(x)))return false;have.add(numv(x));return true}).slice(0,DIFF===2?2:DIFF===1?1:0);
+    const st=cls==='year'?(DIFF===2?[-1,1,-2,2,3,-3]:DIFF===1?[-3,-2,2,3,5,-5,-1,1]:[-10,-5,5,10,-15,15]):(DIFF===2?[-1,1,-2,2,3,-3]:DIFF===1?[-1,1,2,-2,-n/2,n]:[n,-n/2,n/4,10,-10,20]);
+    shuffle(st.slice()).forEach(v=>{if(d.length<3){const r=cls==='year'?n+v:(Math.abs(n)>20?n+v*Math.max(1,Math.round(Math.abs(n)/10)):n+v);const f=fmt(r),rv=numv(f);if(!have.has(rv)&&r>0&&(cls!=='year'||n>2026||r<=2026)){have.add(rv);d.push(f)}}});
   }else if(cls==='month'){
     d=shuffle([...MONTHS].map(m=>m[0].toUpperCase()+m.slice(1)).filter(m=>m!==c.x)).slice(0,3);
   }else{
     const pc=prevOf(t,c.s),setOf=a=>(S.P.T[cls]&&S.P.T[cls].get(a))||(S.P.G[cls]&&S.P.G[cls].get(a))||new Set();
     const cs=new Set(['p:'+pc,'n:'+nextOf(t,c.e)]),ty=typeOfSet(c.x,cs);
     if(cls==='cap')pool=pool.filter(a=>typeOfSet(a,setOf(a))===ty&&Math.abs(wc(a)-wc(c.x))<=2);
+    if(cls==='cap'&&ty==='place'&&DIFF>=1){const pk=placeKind(c.x),same=pool.filter(a=>placeKind(a)===pk);if(same.length>=3)pool=same}
     const hit=a=>((S.P.T[cls]&&S.P.T[cls].get(a)&&S.P.T[cls].get(a).has('p:'+pc))||(S.P.G[cls]&&S.P.G[cls].get(a)&&S.P.G[cls].get(a).has('p:'+pc)));
-    const sc=a=>(hit(a)?-5:0)+Math.abs(wc(a)-wc(c.x))*2+Math.abs(a.length-c.x.length)/5+Math.random()*1.5;
+    const ovl=a=>a.toLowerCase().split(' ').filter(w=>w.length>3&&c.x.toLowerCase().includes(w)).length;
+    const sc=a=>DIFF===0?Math.random()*10:(hit(a)?-5:0)-(DIFF===2?ovl(a)*3:0)+Math.abs(wc(a)-wc(c.x))*2+Math.abs(a.length-c.x.length)/5+Math.random()*1.5;
     d=pool.map(a=>[a,sc(a)]).sort((a,b)=>a[1]-b[1]).slice(0,3).map(a=>a[0]);
   }
   d=[...new Set(d)];
-  return d.length>=3?d.slice(0,3):null;
+  return d.length>=(RELAX?1:3)?d.slice(0,3):null;
 }
 function corrupt(t){const cs=cands(t);if(!cs.length)return null;const c=cs[Math.floor(Math.random()*cs.length)],d=distract(c,t);return d?t.slice(0,c.s)+d[0]+t.slice(c.e):null}
 const yrs=t=>t.match(/\b(?:1[0-9]|20)\d\d\b/g)||[];
@@ -345,7 +359,7 @@ function order(x){
   const sw=j=>{const c=cor.slice();[c[j],c[j+1]]=[c[j+1],c[j]];return c.join('–')},ans=cor.join('–'),o=shuffle([ans,sw(0),sw(1),sw(2)]);
   return{it:x,q:'Arrange the following in chronological order (earliest first):\n'+it.map((v,i)=>L[i]+'. '+v.t).join('\n'),o,a:o.indexOf(ans),e:'Correct order: '+ans+'. Years: '+it.map((v,i)=>L[i]+' = '+v.y).join(', ')}
 }
-const W={blank:45,recall:40,consider:5,order:5,correct:2,not:2,about:1};
+const W={wh:45,recall:30,blank:25,consider:3,order:3,correct:1.5,not:1.5,about:1};
 const pickTypes=()=>Object.keys(W).map(k=>[k,-Math.log(Math.random())/W[k]]).sort((a,b)=>a[1]-b[1]).map(a=>a[0]);
 const VERBS=/\s(is|was|are|were|has|have|had|means|refers to|known as|launched|started|began|founded|introduced|established|announced|signed|passed|declared|spans|covers|aims|commenced|adopted|merged|inaugurated|released|approved|awarded|appointed|elected|won|hosted|signed)\s/i;
 function split(t){const m=VERBS.exec(t);if(!m||m.index<3||m.index>70)return null;const rest=t.slice(m.index+m[0].length).trim();return rest.length<8?null:{sub:t.slice(0,m.index).trim(),verb:m[1],pred:t.slice(m.index).trim()}}
@@ -353,13 +367,107 @@ function recall(x){
   const F=topics[S.id].facts,a=split(x.f.t);if(!a)return null;
   const hasY=p=>/\b(?:1[0-9]|20)\d\d\b/.test(p),seen=new Set([a.pred]),ot=[],ov=p=>cands(a.pred).some(c=>c.x.length>2&&p.includes(c.x));
   shuffle(F.map((f,i)=>i).filter(i=>i!==x.i)).forEach(i=>{const b=split(F[i].t);if(b&&!seen.has(b.pred)&&!ov(b.pred)){seen.add(b.pred);ot.push([b.pred,Math.abs(b.pred.length-a.pred.length)/10+(hasY(b.pred)===hasY(a.pred)?0:3)+(b.pred.split(' ')[0].toLowerCase()===a.pred.split(' ')[0].toLowerCase()?-2:0)+Math.random()*2])}});
-  if(ot.length<3)return null;
+  if(ot.length<(RELAX?1:3))return null;
   const d=ot.sort((p,q)=>p[1]-q[1]).slice(0,3).map(v=>v[0]),o=shuffle([a.pred,...d]);
   return{it:x,q:'Complete the statement correctly:\n'+a.sub+' …',o,a:o.indexOf(a.pred),e:'Your notes say: '+x.f.t}
 }
+let DIFF=1;
+const MON='January|February|March|April|May|June|July|August|September|October|November|December',MN=MON.split('|');
+const DATE='(?:(?:\\d{1,2}(?:st|nd|rd|th)?\\s+)?(?:'+MON+')(?:\\s+\\d{1,2}(?:st|nd|rd|th)?,?)?\\s+)?(?:1[0-9]|20)\\d\\d';
+const PART='established|founded|launched|inaugurated|passed|enacted|signed|announced|born|created|formed|started|held|built|completed|introduced|adopted|approved|declared|constituted|notified|amended|set up|commissioned|opened|released|merged|renamed|banned|abolished|repealed|ratified|promulgated|incorporated|instituted|organised|organized|conducted|issued|proposed|submitted|tabled|conferred|awarded|discovered|invented|nationalised|nationalized|implemented|rolled out|recognised|recognized|accepted|publicised|unveiled|tested|deployed|selected|proclaimed';
+const WP=new RegExp('^(.+?)\\s+(was|were)\\s+('+PART+')\\s+(.*?)\\b(?:in|on|during|since|from)\\s+('+DATE+')\\b(.*)$','i');
+const WA=new RegExp('^(.+?)\\s+(began|started|commenced|ended|died|came into force|came into effect)\\s+(.*?)\\b(?:in|on|during|from)\\s+('+DATE+')\\b(.*)$','i');
+const BASE={began:'begin',started:'start',commenced:'commence',ended:'end',died:'die','came into force':'come into force','came into effect':'come into effect'};
+const lT=z=>z.replace(/^The\s/,'the ');
+const clean=z=>(z||'').replace(/^[\s,;.]+|[\s,;.]+$/g,'');
+function dateVars(d,df){
+  const y=+d.match(/(?:1[0-9]|20)\d\d/)[0],mm=d.match(new RegExp(MON,'i')),mi=mm?MN.findIndex(v=>v.toLowerCase()===mm[0].toLowerCase()):-1,dd=(d.match(/\b(\d{1,2})(?:st|nd|rd|th)?\b/)||[])[1];
+  const wy=v=>d.replace(/(?:1[0-9]|20)\d\d/,String(v)),wm=k=>d.replace(new RegExp(MON,'i'),MN[(k%12+12)%12]),wd=v=>d.replace(/\b\d{1,2}\b/,String(v));
+  const Y=(df===2?[-1,1,-2,2,3,-3]:df===1?[-2,2,-3,3,5,-5]:[-5,5,-10,10,-15,15]).filter(k=>y>2026||y+k<=2026).map(k=>wy(y+k));
+  const M=mi<0?[]:(df===2?[1,-1,2,-2]:df===1?[3,-3,2,-2]:[6,-6,4,-4]).map(k=>wm(mi+k));
+  const D=(!dd||mi<0)?[]:(df===2?[1,-1,2]:[5,-5,10]).map(k=>+dd+k).filter(v=>v>=1&&v<=28).map(wd);
+  const A=[shuffle(Y),shuffle(M),shuffle(D)],out=[];
+  while(out.length<3&&A.some(a=>a.length)){for(const a of A){if(a.length&&out.length<3){const v=a.shift();if(v!==d&&!out.includes(v))out.push(v)}}}
+  return out.length>=(RELAX?1:3)?out:null;
+}
+function synth(a,t){const i=t.indexOf(a),s=i<0?0:i,cl=/^\d/.test(a)?(/^(?:1[0-9]|20)\d\d$/.test(a)?'year':'num'):MONTHS.has(a.toLowerCase())?'month':(/^[A-Z][A-Z0-9&\-]{1,9}$/.test(a)?'acr':'cap');return{s,e:s+a.length,x:a,c:cl}}
+function mkOpts(ans,t,extra,strict){
+  let d=[...new Set((extra||[]).filter(v=>v&&v!==ans&&!t.includes(v)))];
+  if(d.length<3&&!strict){const dd=distract(synth(ans,t),t);if(dd)d=[...new Set([...d,...dd])]}
+  if(d.length<(RELAX?1:3))return null;
+  const o=shuffle([ans,...shuffle(d).slice(0,3)]);return{o,a:o.indexOf(ans)};
+}
+const personlike=v=>{const w=v.split(' ');return w.length>=2&&w.length<=4&&w.every(z=>/^[A-Z][A-Za-z.]*$/.test(z))&&['other','person'].includes(sigOf(v))&&!PLACES.has(v.toLowerCase())};
+function whenQ(x){
+  const t=x.f.t;let m=WP.exec(t),q,date;
+  if(m&&m[1].length<=80){date=m[5];q='When '+m[2].toLowerCase()+' '+lT(m[1])+' '+m[3].toLowerCase()+(clean(m[4])?' '+clean(m[4]):'')+(clean(m[6])?' '+clean(m[6]):'')+'?'}
+  else if((m=WA.exec(t))&&m[1].length<=80){date=m[4];q='When did '+lT(m[1])+' '+BASE[m[2].toLowerCase()]+(clean(m[3])?' '+clean(m[3]):'')+(clean(m[5])?' '+clean(m[5]):'')+'?'}
+  else return null;
+  const d=/^(?:1[0-9]|20)\d\d$/.test(date)?null:dateVars(date,DIFF);let r;
+  if(d){const o=shuffle([date,...d]);r={o,a:o.indexOf(date)}}else r=mkOpts(date,t.replace(date,''),null);
+  return r?{it:x,q,o:r.o,a:r.a,e:'Your notes say: '+t}:null;
+}
+const WHERE=/^(.+?)\s+(is|are|was|were)\s+(located|situated|headquartered|based|found)\s+(?:in|at|on|near|along)\s+(.+)$/i;
+function whereQ(x){const t=x.f.t,m=WHERE.exec(t);if(!m||m[1].length>80)return null;
+  const cs=cands(m[4]).filter(c=>c.s===0&&c.c==='cap');if(!cs.length)return null;
+  const r=mkOpts(cs[0].x,t,null);return r?{it:x,q:'Where '+m[2].toLowerCase()+' '+lT(m[1])+' '+m[3].toLowerCase()+'?',o:r.o,a:r.a,e:'Your notes say: '+t}:null}
+const BYR=/^(.+?)\s+(was|were)\s+(\w+(?:\s+up)?)\s+by\s+(.+)$/i;
+function whoQ(x){const t=x.f.t,m=BYR.exec(t);if(!m||m[1].length>80||!/(ed|en|wn|ne|ten|aid|ilt|ung|up)$/i.test(m[3]))return null;
+  const cs=cands(m[4]).filter(c=>c.s===0&&c.c==='cap');if(!cs.length)return null;const ans=cs[0].x,pl=personSet().has(ans),org=sigOf(ans)==='org';
+  if(!pl&&!org)return null;
+  const extra=pl?[...personSet()]:keys(S.P.T.cap).filter(v=>sigOf(v)==='org');
+  const r=mkOpts(ans,t,shuffle(extra).slice(0,12));if(!r)return null;
+  return{it:x,q:(pl?'By whom ':'By which organisation ')+m[2].toLowerCase()+' '+lT(m[1])+' '+m[3].toLowerCase()+'?',o:r.o,a:r.a,e:'Your notes say: '+t}}
+const HEADS='nodal agency|nodal ministry|nodal body|headquarters|head office|chairman|chairperson|president|prime minister|chief minister|governor|director|founder|first \\w+|current \\w+|capital|motto|slogan|theme|symbol|emblem|apex body|regulator|launch vehicle|full form|aim|objective|purpose|mascot|patron|vice president|secretary|chief|head|leader|commander|architect|author|designer';
+const WHATR=new RegExp('^((?:the\\s+)?(?:'+HEADS+')\\b.*?)\\s+(is|are|was|were)\\s+(.+)$','i');
+const WHOH=/chairman|chairperson|president|minister|governor|director|founder|secretary|chief|head|leader|commander|architect|author|designer|patron/i;
+function personSet(){
+  if(S._ps)return S._ps;const out=new Set(),add=v=>{if(personlike(v))out.add(v)};
+  Object.keys(topics).forEach(id=>topics[id].facts.forEach(f=>{const t=f.t;let m=WHATR.exec(t);
+    if(m&&WHOH.test(m[1].split(/\sof\s/i)[0]))add(clean(m[3]));
+    m=BYR.exec(t);if(m&&/^(founded|established|written|authored|developed|composed|invented|discovered|designed|drafted|headed|chaired|led|proposed|started|created|inaugurated|born)$/i.test(m[3])){const cs=cands(m[4]).filter(c=>c.s===0&&c.c==='cap');if(cs.length)add(cs[0].x)}
+    cands(t).forEach(c=>{if(c.c==='cap'&&(PPREV.has(prevOf(t,c.s))||PNEXT.has(nextOf(t,c.e))))add(c.x)})}));
+  return S._ps=out}
+const hkey=z=>z.toLowerCase().replace(/^the\s+/,'').split(/\s+/).slice(0,2).join(' ');
+function whatQ(x){const t=x.f.t,m=WHATR.exec(t);if(!m)return null;const sub=m[1],ans=clean(m[3]);
+  if(sub.length>80||ans.split(' ').length>8||/\s(and|or|which|that|where|but)\s/i.test(ans))return null;
+  const F=topics[S.id].facts,extra=[];F.forEach((f,i)=>{if(i===x.i)return;const mm=WHATR.exec(f.t);if(mm&&hkey(mm[1])===hkey(sub))extra.push(clean(mm[3]))});
+  const wh=WHOH.test(sub.split(/\sof\s/i)[0])?'Who':'What';
+  if(wh==='Who'){if(!personSet().has(ans))return null;personSet().forEach(v=>{if(v!==ans&&!extra.includes(v))extra.push(v)})}
+  const r=mkOpts(ans,t,wh==='Who'?shuffle(extra).slice(0,14):extra,wh==='Who');if(!r)return null;
+  const s2=sub.replace(/^(\w)(\w*)/,(a,b,c)=>/[A-Z]{2}/.test(a)?a:b.toLowerCase()+c);
+  return{it:x,q:wh+' '+m[2].toLowerCase()+' '+(/^(the|a|an)\s/i.test(sub)?'':'the ')+s2+'?',o:r.o,a:r.a,e:'Your notes say: '+t}}
+const HM=/^(.+?)\s+(has|have|comprises|comprise|consists of|includes|include|contains|contain|covers|spans)\s+(?:a total of\s+)?(\d[\d,]*)\s+([A-Za-z][A-Za-z\- ]{2,30}?)(?=\s+(?:in|of|across|under|with|at|and|which|for|on|from|including)\b|[,.:;]|$)/i;
+const HB={has:'have',comprises:'comprise','consists of':'consist of',includes:'include',contains:'contain',covers:'cover',spans:'span'};
+function hmQ(x){const t=x.f.t,m=HM.exec(t);if(!m||m[1].length>70)return null;const v=m[2].toLowerCase(),r=mkOpts(m[3],t.replace(m[3],''),null);if(!r)return null;
+  return{it:x,q:'How many '+clean(m[4])+' '+(HB[v]?'does':'do')+' '+lT(m[1])+' '+(HB[v]||v)+'?',o:r.o,a:r.a,e:'Your notes say: '+t}}
+const SF=/^(.+?)\s+(stands for|stand for|means|refers to)\s+(.+)$/i;
+function sfQ(x){const t=x.f.t,m=SF.exec(t);if(!m||m[1].length>30)return null;const ans=clean(m[3]);if(ans.split(' ').length>10)return null;
+  const F=topics[S.id].facts,extra=[];F.forEach((f,i)=>{if(i===x.i)return;const mm=SF.exec(f.t);if(mm&&mm[1].length<=30)extra.push(clean(mm[3]))});
+  const r=mkOpts(ans,t,extra);if(!r)return null;const v=m[2].toLowerCase();
+  return{it:x,q:'What does '+m[1]+' '+(v.startsWith('stand')?'stand for':v==='means'?'mean':'refer to')+'?',o:r.o,a:r.a,e:'Your notes say: '+t}}
+function whQ(x){for(const f of shuffle([whenQ,whereQ,whoQ,whatQ,hmQ,sfQ])){try{const q=f(x);if(q)return q}catch(e){console.error(e)}}return null}
+let RELAX=false;
+const RF=()=>localStorage.getItem('examquiz_rf')==='1';
+function flashQ(x){
+  const t=x.f.t,cs=cands(t);
+  if(cs.length){const c=cs[Math.floor(Math.random()*cs.length)];return{it:x,flash:1,q:'Recall from memory. Fill in the blank:\n'+t.slice(0,c.s)+'_____'+t.slice(c.e),ans:c.x,e:'Your notes say: '+t}}
+  const w=t.split(' ');if(w.length<4)return{it:x,flash:1,q:'Recall this fact from memory:\n'+w[0]+' …',ans:t,e:''};
+  const h=Math.ceil(w.length/2);return{it:x,flash:1,q:'Complete from memory:\n'+w.slice(0,h).join(' ')+' …',ans:w.slice(h).join(' '),e:'Your notes say: '+t}
+}
+const DIR=['wh','recall','blank'],OTH=['consider','order','correct','not','about'];
 function localQ(x){
+  DIFF=(r=>r<.25?0:r<.65?1:2)(Math.random());
+  let q=null;RELAX=false;
+  if(Math.random()<.08)q=localQ1(x,OTH);
+  if(!q)q=localQ1(x,DIR);
+  if(!q){RELAX=true;q=localQ1(x,DIR);RELAX=false}
+  return q||flashQ(x);
+}
+function localQ1(x,allowed){
   const t=x.f.t,cs=cands(t),ct=cs.length?cs:[...t.matchAll(/\b[a-z]{7,}\b/g)].map(m=>({s:m.index,e:m.index+m[0].length,x:m[0],c:'w'}));
-  for(const ty of pickTypes()){
+  for(const ty of pickTypes().filter(k=>allowed.includes(k))){
+    if(ty==='wh'){const q=whQ(x);if(q)return q;continue}
     if(ty==='consider'){const q=consider(x);if(q)return q;continue}
     if(ty==='order'){const q=order(x);if(q)return q;continue}
     if(ty==='recall'){const q=recall(x);if(q)return q;continue}
@@ -382,6 +490,7 @@ function setup(id){
   app.innerHTML=`<h1>${esc(T.name)}</h1><div class="card"><div class="mut">Question source</div>
   <div class="row"><button class="${MODE==='bank'?'p':''}" onclick="MODE='bank';setup('${id}')">Claude-written, stored (${T.bk||0}/${n} ready)</button><button class="${MODE==='quick'?'p':''}" onclick="MODE='quick';setup('${id}')">Instant · no Claude · unlimited</button></div>
   <div class="mut" style="margin-top:14px">Timer per question</div><div class="row">${[15,20,30,0].map(v=>`<button class="${TSEC()===v?'p':''}" onclick="localStorage.setItem('examquiz_t',${v});setup('${id}')">${v?v+'s':'Off'}</button>`).join('')}</div>
+  <div class="mut" style="margin-top:14px">Recall first: options stay hidden until you tap “Show options”, so you try to retrieve the answer yourself</div><div class="row">${[1,0].map(v=>`<button class="${(RF()?1:0)===v?'p':''}" onclick="localStorage.setItem('examquiz_rf','${v}');setup('${id}')">${v?'On':'Off'}</button>`).join('')}</div>
   <div class="mut" style="margin-top:14px">How many facts this round? Weak and not-recently-tested facts come first.</div>
   <div class="row">${[10,20,40,n].filter((v,i,a)=>v<=n&&a.indexOf(v)===i).map(v=>`<button class="p" onclick="practice('${id}',${v})">${v===n?'All '+n:v}</button>`).join('')}</div></div><button onclick="home()">Back</button>`;
 }
@@ -431,16 +540,18 @@ async function nextQ(){
   }
   const q=S.qs[S.qi];
   app.innerHTML=`<div class="bar"><div style="width:${100*S.done/S.total}%"></div></div><div class="row" style="justify-content:space-between;margin:0"><div class="mut">Question ${S.done+1} of ${S.total}</div><div id="tm" style="font-weight:600"></div></div>
-  <div class="card"><div style="font-weight:600;white-space:pre-wrap">${esc(q.q)}</div>${q.o.map((o,i)=>`<button class="opt" onclick="pick(${i})">${'ABCD'[i]}. ${esc(o)}</button>`).join('')}<div id="ex"></div></div>`;
+  <div class="card"><div class="qt">${esc(q.q)}</div>${q.flash?'<button class="opt p" id="sb" onclick="revealF()">Show answer</button>':(RF()?'<button class="opt p" id="sb" onclick="showOpts()">Show options</button>':'')}<div id="ops" style="display:${!q.flash&&RF()?'none':'block'}">${q.flash?'':q.o.map((o,i)=>`<button class="opt" onclick="pick(${i})"><span class="ltr">${'ABCD'[i]}</span><span>${esc(o)}</span></button>`).join('')}</div><div id="ex"></div></div>`;
   startTimer();
 }
+function showOpts(){document.getElementById('ops').style.display='block';document.getElementById('sb').remove()}
+function revealF(){const q=S.qs[S.qi];clearInterval(TM);document.getElementById('sb').remove();document.getElementById('ex').innerHTML=`<div class="exp"><b>Answer:</b> ${esc(q.ans)}</div><div class="row"><button class="p" onclick="pick(1)">I knew it ✓</button><button onclick="pick(0)">Missed it ✗</button></div>`}
 function retry(){delete S.pre[S.k];nextQ()}
 function pick(i){
   const q=S.qs[S.qi];if(q.d)return;q.d=1;clearInterval(TM);
-  const ok=i===q.a,f=q.it.f;
+  const ok=q.flash?i===1:i===q.a,f=q.it.f;
   document.querySelectorAll('.opt').forEach((b,j)=>{b.disabled=true;if(j===q.a)b.classList.add('ok');else if(j===i)b.classList.add('no')});
   f.s++;if(ok){f.c++;S.right++}else S.miss.push(f.t);f.l=Date.now();S.done++;
-  document.getElementById('ex').innerHTML=`<div class="exp"><b style="color:var(--${ok?'ok':'no'})">${ok?'Correct ✓':(i<0?'Time’s up ⏱':'Wrong ✗')+' — answer: '+'ABCD'[q.a]}</b><p>${esc(q.e||q.it.f.t)}</p><div class="mut">Source fact: ${esc(f.t)}</div></div><div class="row"><button class="p" onclick="S.qi++;nextQ()">${S.done>=S.total?'See results':'Next'}</button></div>`;
+  document.getElementById('ex').innerHTML=`<div class="exp"><b style="color:var(--${ok?'ok':'no'})">${ok?'Correct ✓':(i<0?'Time’s up ⏱':'Wrong ✗')+' — answer: '+(q.flash?q.ans:'ABCD'[q.a])}</b><p>${esc(q.e||q.it.f.t)}</p><div class="mut">Source fact: ${esc(f.t)}</div></div><div class="row"><button class="p" onclick="S.qi++;nextQ()">${S.done>=S.total?'See results':'Next'}</button></div>`;
 }
 async function finish(){
   await save(S.id);
