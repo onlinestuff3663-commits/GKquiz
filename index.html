@@ -42,7 +42,7 @@ const uid8=()=>Math.random().toString(36).slice(2,9);
 const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 async function init(){
   try{col=mkcol('topics');bcol=mkcol('bank');(await col.get()).docs.forEach(d=>topics[d.id]=d.data());if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){console.error(e);col=null}
-  sample=mkSample();home();
+  sample=mkSample();qsample=mkSampleQ();home();
 }
 async function save(id){if(!col)return;try{await col.doc(id).set(topics[id])}catch(e){console.error(e)}}
 const BANK={};
@@ -57,8 +57,16 @@ async function saveChunk(id,k){
   if(bcol)try{await bcol.doc(id+'_'+k).set({m})}catch(e){console.error(e)}
   const T=topics[id];T.bn=Math.max(T.bn||0,k+1);T.bk=Object.keys(B).filter(i=>B[i].length>=4).length;await save(id);
 }
+const QRULES=`You are a strict exam-paper setter for Indian competitive exams (UPSC, State PSC, SSC level). The student is practising ACTIVE RECALL: every question must force them to retrieve one specific piece of information from memory, not to reason or guess from the wording.
+Rules:
+- Each question tests exactly the numbered fact. At least 9 in 10 questions must be DIRECT recall: a plain When / Where / Who / Which / What / How many question, or a fill in the blank. Use other formats (which is NOT correct, statement judging) at most 1 time in 10.
+- The question must stand alone and must not contain or hint at the answer. Prefer a real question over the fact's own sentence with the answer cut out.
+- Exactly 4 options and only one correct. Wrong options must be plausible and of the SAME kind and format as the right answer (same type of thing, similar length and precision), close enough to tempt someone who only half remembers. Use real, related names, dates, places and numbers from your general knowledge of the subject. Never absurd or random options, never "all of the above" or "none of the above", never two defensible answers.
+- Mix difficulty: some easy, some medium, some hard. Hard means very close options (adjacent years, similar institutions, neighbouring states, similar numbers).
+- "e" is 1-2 sentences restating the correct fact exactly as in the notes, then one short line on why the closest wrong option is wrong. Add nothing that is not in the notes unless you are certain it is true.
+`;
 async function build(ids){
-  if(!sample){toast('Add a free Gemini key (or Claude key) in Settings to build AI-written questions.');return}
+  if(!QS()){toast('Add a Gemini key in Settings to build AI-written questions.');return}
   STOP=0;
   app.innerHTML='<h1>Building question bank</h1><div class="bar"><div id="bp" style="width:0"></div></div><div id="bs" class="mut">Starting…</div><div class="row"><button onclick="STOP=1">Stop &amp; save</button></div><p class="mut">Keep this page open. Whatever is finished is saved as it goes, so you can stop and resume later.</p>';
   const todo=[];
@@ -69,10 +77,10 @@ async function build(ids){
     while(p<todo.length&&todo[p].id===id&&grp.length<8)grp.push(todo[p++]);
     document.getElementById('bs').textContent=`${done} of ${todo.length} facts done · ${topics[id].name}`;
     const T=topics[id],B=BANK[id],seed=Math.random().toString(36).slice(2,6);
-    const pr=`You are a tough exam-paper setter for Indian competitive exams. For each numbered fact write 4 DIFFERENT multiple-choice questions that each test exactly that fact. Difficulty mix per fact: one easy, two medium, one hard. Make them genuinely different: vary the wording, the angle and the style (direct recall; "which is NOT / incorrect" twist; assertion to judge; fill in the blank using ____; scenario-based; reverse question asking for the name/place/number). At least one of the four must be fill-in-the-blank. Each question has exactly 4 options. Distractors must be plausible and close to the right answer (same category, similar names, dates, numbers, places), different in each of the 4 questions, never obviously wrong; only one option is correct. "e" is a 2-3 sentence explanation: state the correct fact fully and briefly say why the closest wrong options are wrong. Seed: ${seed}. Return ONLY JSON: [{"i":<fact number>,"qs":[{"q":"...","o":["..","..","..",".."],"a":<index 0-3>,"e":"..."}]}]\n\nFACTS:\n`+grp.map((g,k)=>`${k+1}. ${T.facts[g.i].t}`).join('\n');
+    const pr=QRULES+`For each numbered fact write 4 DIFFERENT questions that each test that fact from a different angle (for example: ask for the date; ask which event happened at that date; ask for the place; ask for the person; a fill in the blank), with different wording and different wrong options each time. At least one of the four must be a fill in the blank. Seed: ${seed}. Return ONLY JSON: [{"i":<fact number>,"qs":[{"q":"...","o":["..","..","..",".."],"a":<index 0-3>,"e":"..."}]}]\n\nFACTS:\n`+grp.map((g,k)=>`${k+1}. ${T.facts[g.i].t}`).join('\n');
     let ok=false;
     for(let t=0;t<2&&!ok;t++){try{
-      const r=await sample.json(pr,{cache:false});
+      const r=await QS().json(pr,{cache:false,temp:.9});
       r.forEach(x=>{const g=grp[x.i-1];if(!g||!Array.isArray(x.qs))return;
         const v=x.qs.filter(q=>q&&Array.isArray(q.o)&&q.o.length===4&&q.a>=0&&q.a<4&&q.q);
         if(v.length)B[g.i]=(B[g.i]||[]).concat(v.map(q=>({q:q.q,o:q.o,a:q.a,e:q.e||''})))});
@@ -94,15 +102,14 @@ const KEY='examquiz_key',getKey=()=>localStorage.getItem(KEY)||'';
 const PROV=()=>localStorage.getItem('examquiz_prov')||'gemini',MODEL=()=>localStorage.getItem('examquiz_model')||(PROV()==='gemini'?'gemini-3.5-flash':'claude-sonnet-5-5');
 const b64=blob=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(',')[1]);f.readAsDataURL(blob)});
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));let lastCall=0;
-function mkSample(){
-  if(!getKey())return null;
+function mkClient(getK,getP,getM){
   return{async json(prompt,o={}){
     const imgs=[];for(const b of(o.images||[]))imgs.push(await b64(b));
-    const g=PROV()==='gemini';let t='';
+    const g=getP()==='gemini',temp=o.temp===undefined?1:o.temp;let t='';
     for(let a=0;a<4&&!t;a++){
       const w=lastCall+(g?4500:0)-Date.now();if(w>0)await sleep(w);lastCall=Date.now();
-      const r=g?await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+MODEL()+':generateContent?key='+encodeURIComponent(getKey()),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt},...imgs.map(d=>({inline_data:{mime_type:'image/jpeg',data:d}}))]}],generationConfig:{responseMimeType:'application/json',maxOutputTokens:16000}})})
-        :await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':getKey(),'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:MODEL(),max_tokens:12000,messages:[{role:'user',content:[...imgs.map(d=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:d}})),{type:'text',text:prompt}]}]})});
+      const r=g?await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+getM()+':generateContent?key='+encodeURIComponent(getK()),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt},...imgs.map(d=>({inline_data:{mime_type:'image/jpeg',data:d}}))]}],generationConfig:{responseMimeType:'application/json',maxOutputTokens:16000,temperature:temp}})})
+        :await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':getK(),'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:getM(),max_tokens:12000,temperature:Math.min(temp,1),messages:[{role:'user',content:[...imgs.map(d=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:d}})),{type:'text',text:prompt}]}]})});
       if(r.status===429||r.status===503){await sleep(15000*(a+1));continue}
       const j=await r.json();if(!r.ok)throw new Error((j.error&&j.error.message)||r.status);
       t=g?((j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts)||[]).map(p=>p.text||'').join(''):j.content.map(c=>c.text||'').join('');
@@ -110,18 +117,24 @@ function mkSample(){
     if(!t)throw new Error('No answer (limit reached?). Wait a few minutes or try tomorrow.');
     const m=t.replace(/```json|```/g,'').match(/\[[\s\S]*\]/);return JSON.parse(m?m[0]:t)}}
 }
+function mkSample(){return getKey()?mkClient(getKey,PROV,MODEL):null}
+const QK='examquiz_qkey',QM='examquiz_qmodel';let qsample=null;
+function mkSampleQ(){return localStorage.getItem(QK)?mkClient(()=>localStorage.getItem(QK),()=>'gemini',()=>localStorage.getItem(QM)||'gemini-3.5-flash'):null}
+const QS=()=>qsample||sample;
+function saveQ(){localStorage.setItem(QK,document.getElementById('qk').value.trim());localStorage.setItem(QM,document.getElementById('qm').value.trim()||'gemini-3.5-flash');qsample=mkSampleQ();toast('Saved')}
 function saveKey(){localStorage.setItem(KEY,document.getElementById('ak').value.trim());localStorage.setItem('examquiz_model',document.getElementById('am').value.trim());sample=mkSample();toast('Saved')}
 function setProv(p){localStorage.setItem('examquiz_prov',p);localStorage.removeItem('examquiz_model');settings()}
 function settings(){
   const p=PROV();
   app.innerHTML=`<h1>Settings &amp; backup</h1>
   <div class="card"><h2>Appearance</h2><div class="row" style="margin-top:6px"><button class="${document.documentElement.dataset.theme==='light'?'p':''}" onclick="localStorage.setItem('examquiz_theme','light');document.documentElement.dataset.theme='light';settings()">Light</button><button class="${document.documentElement.dataset.theme==='dark'?'p':''}" onclick="localStorage.setItem('examquiz_theme','dark');document.documentElement.dataset.theme='dark';settings()">Dark</button></div></div>
-  <div class="card"><h2>AI helper (needed for handwriting and for good questions)</h2>
+  <div class="card"><h2>Reading key (reads your notes and extracts the facts)</h2>
   <p class="mut"><b>Free:</b> get a free Google Gemini key at aistudio.google.com → “Get API key”. No card needed. It has daily limits, and Google may use content sent on the free tier to improve its products. <b>Paid alternative:</b> a Claude key from console.anthropic.com. The key stays in this browser.</p>
   <div class="row"><button class="${p==='gemini'?'p':''}" onclick="setProv('gemini')">Gemini (free)</button><button class="${p==='claude'?'p':''}" onclick="setProv('claude')">Claude (paid)</button></div>
   <input type="text" id="ak" placeholder="Paste your ${p==='gemini'?'Gemini':'Claude'} API key" value="${esc(getKey())}" style="margin-top:10px">
   <input type="text" id="am" value="${esc(MODEL())}" style="margin-top:8px"><div class="mut">Model name (change only if it stops working)</div>
   <div class="row"><button class="p" onclick="saveKey()">Save</button></div></div>
+  <div class="card"><h2>Question-writing key (Gemini)</h2><p class="mut">Used only to write questions (the stored bank and the “Gemini fresh” mode). The reading key above then only reads notes. Leave empty to use the reading key for both. Paste the key here in the app, never into the GitHub file.</p><input type="text" id="qk" placeholder="Paste a Gemini API key" value="${esc(localStorage.getItem(QK)||'')}"><input type="text" id="qm" value="${esc(localStorage.getItem(QM)||'gemini-3.5-flash')}" style="margin-top:8px"><div class="mut">Model name (change only if it stops working)</div><div class="row"><button class="p" onclick="saveQ()">Save</button></div></div>
   <div class="card"><h2>Backup</h2><p class="mut">Topics and progress live in this browser only. Export a backup regularly; Import restores it or moves it to another device.</p><div class="row"><button class="p" onclick="exportAll()">Export backup</button></div><p class="mut" style="margin:12px 0 4px">Import a backup file:</p><input type="file" id="imp" accept=".json" onchange="importAll(this.files[0])"></div><button onclick="home()">Back</button>`;
 }
 async function exportAll(){const keys=await kv('readonly',s=>s.getAllKeys()),vals=await kv('readonly',s=>s.getAll()),o={};keys.forEach((k,i)=>o[k]=vals[i]);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(o)],{type:'application/json'}));a.download='quiz-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click()}
@@ -200,11 +213,18 @@ function addView(id){
   <input type="file" id="fl" accept="application/pdf,image/*" multiple>
   <p class="mut" style="margin:14px 0 4px">If the file button doesn’t open on your phone, copy the text from your PDF and paste it here instead:</p><textarea id="tx" style="min-height:140px" placeholder="Paste notes text here (one or many topics)"></textarea>
   ${id?'':'<p class="mut" style="margin:14px 0 4px">Optional: list the topics in this file, one per line, to help sort the facts.</p><textarea id="hint" placeholder="Naxalism&#10;Mission Karmayogi"></textarea>'}
-  <label class="mut" style="display:block;margin-top:12px"><input type="checkbox" id="ocr"> Printed (not handwritten) scans: try free OCR</label>
+  <label class="mut" style="display:block;margin-top:12px"><input type="checkbox" id="dbl" checked> Double-check every page for missed facts (slower, more thorough)</label>
+  <label class="mut" style="display:block;margin-top:8px"><input type="checkbox" id="ocr"> Printed (not handwritten) scans: try free OCR</label>
   <div class="row"><button class="p" id="go" onclick="extract('${id||''}')">Extract facts</button><button id="stop" style="display:none" onclick="STOP=1">Stop &amp; keep what’s done</button><button onclick="home()">Cancel</button></div>
   <div id="st" class="mut" style="margin-top:12px"></div>`;
 }
-const shrink=f=>new Promise(r=>{const i=new Image();i.onload=()=>{const k=Math.min(1,1800/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);c.toBlob(r,'image/jpeg',.85)};i.src=URL.createObjectURL(f)});
+const shrink=f=>new Promise(r=>{const i=new Image();i.onload=()=>{const k=Math.min(1,2400/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);c.toBlob(r,'image/jpeg',.9)};i.src=URL.createObjectURL(f)});
+const exPrompt=(fid,hint,cur)=>`These pages are exam study notes (current affairs / GK), possibly handwritten. Your job is COMPLETE extraction: every single piece of information on the page must end up in a fact. Rules:
+- Go line by line, top to bottom, then check the margins, boxes, tables, arrows, underlined or circled words, diagram labels and any small writing. Skip nothing.
+- Make one fact per bullet, line or sub-point. If one line holds several pieces of information (a list of names, several dates or numbers, items separated by commas, slashes or arrows), split them into separate facts so no item is lost.
+- Each fact must be a short self-contained statement with the names, numbers, dates and places needed to understand it alone. Where a point only makes sense under its heading, name the subject inside the fact instead of writing "it", "this" or "they". Expand obvious shorthand (est. = established, govt = government) but never change or drop any detail.
+- Do not summarise, merge or skip anything, and add nothing. If a word is truly unclear, give your best guess followed by [?].
+- Assign each fact to its topic. `+(fid?'':hint.length?`Use ONLY these topic names, exactly as written: ${hint.join(' | ')}. `:'Use the heading the notes sit under as the topic, short and consistent. ')+(cur&&!fid?`The previous pages ended in the topic "${cur}"; keep using it if these pages continue it, and switch only when a new topic heading starts. `:'')+`Return ONLY a JSON array: [{"topic":"...","fact":"..."}]`;
 async function extract(fid){
   const files=[...document.getElementById('fl').files],txt=document.getElementById('tx').value.trim();if(!files.length&&!txt){toast('Choose a file or paste text first');return}
   const hint=fid?[]:document.getElementById('hint').value.split('\n').map(x=>x.trim()).filter(Boolean);
@@ -229,34 +249,40 @@ async function extract(fid){
     if(u.file)return{b:await shrink(u.file)};
     const pg=await u.pdf.getPage(u.p),tc=await pg.getTextContent(),t=tc.items.map(i=>i.str).join(' ').replace(/\s+/g,' ').trim();
     if(t.length>300)return{t};
-    const vp=pg.getViewport({scale:1.6}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;
+    const vp=pg.getViewport({scale:2.2}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;
     await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
-    return{b:await new Promise(r=>c.toBlob(r,'image/jpeg',.82))};
+    return{b:await new Promise(r=>c.toBlob(r,'image/jpeg',.9))};
   };
-  for(let i=0;i<pages.length&&!STOP;i+=3){
-    const grp=pages.slice(i,i+3);let ok=false;
-    st.textContent=`Reading pages ${i+1}–${i+grp.length} of ${pages.length} · ${Object.keys(by).length} topics found so far`;
-    for(let t=0;t<2&&!ok;t++){
-      try{
-        const us=[];for(const g of grp)us.push(await unit(g));
-        const tx=us.filter(u=>u.t).map(u=>u.t),bl=us.filter(u=>u.b).map(u=>u.b);
-        const pr=`These pages are exam study notes (current affairs / GK), possibly handwritten. Read the handwriting carefully; if a word is truly unclear give your best guess followed by [?]. Extract EVERY individual fact as a short self-contained statement that includes the names, numbers, dates and places needed to understand it alone. Never skip, merge or summarise any detail, however small: make one fact per bullet or line wherever possible, and every name, number, date, place and term in the notes must appear in some fact. Assign each fact to its topic. `+
-          (fid?'':hint.length?`Use ONLY these topic names, exactly as written: ${hint.join(' | ')}. `:'Use the heading the notes sit under as the topic, short and consistent. ')+
-          (cur&&!fid?`The previous pages ended in the topic "${cur}"; keep using it if these pages continue it, and switch only when a new topic heading starts. `:'')+
-          `Return ONLY a JSON array: [{"topic":"...","fact":"..."}]`+(tx.length?'\n\nPAGE TEXT:\n'+tx.join('\n--- next page ---\n'):'')+(bl.length?'\n\n(The attached images are further pages of the same notes.)':'');
-        const r=await sample.json(pr,bl.length?{images:bl,cache:false}:{cache:false});
-        r.forEach(x=>{if(!x||!x.fact)return;const nm=fid?topics[fid].name:String(x.topic||cur||'Untitled').trim(),k=nm.toLowerCase();(by[k]=by[k]||{name:nm,facts:[]}).facts.push(String(x.fact).trim());cur=nm});
-        ok=true;
-      }catch(e){console.error(e)}
-    }
-    if(!ok)skipped.push('Couldn’t read '+grp.map(g=>g.label).join(', ')+'. Upload them again.');
+  const dbl=document.getElementById('dbl')&&document.getElementById('dbl').checked;let total=0,pend=null;
+  const addF=arr=>arr.forEach(x=>{if(!x||!x.fact)return;const nm=fid?topics[fid].name:String(x.topic||cur||'Untitled').trim(),k=nm.toLowerCase();(by[k]=by[k]||{name:nm,facts:[]}).facts.push(String(x.fact).trim());cur=nm;total++});
+  for(let i=0;i<pages.length&&!STOP;){
+    const grp=[],us=[];
+    try{
+      while(i<pages.length&&grp.length<3){
+        const u=pend||await unit(pages[i]);pend=null;
+        if(u.b&&grp.length){pend=u;break}
+        grp.push(pages[i]);us.push(u);i++;
+        if(u.b)break;
+      }
+    }catch(e){console.error(e);skipped.push('Couldn’t open '+(pages[i]?pages[i].label:'a page')+'.');i++;continue}
+    st.textContent=`Reading ${grp[0].label}${grp.length>1?' to '+grp[grp.length-1].label:''} (${i} of ${pages.length}) · ${total} facts so far`;
+    const tx=us.filter(u=>u.t).map(u=>u.t),bl=us.filter(u=>u.b).map(u=>u.b),body=(tx.length?'\n\nPAGE TEXT:\n'+tx.join('\n--- next page ---\n'):'')+(bl.length?'\n\n(The attached images are the pages.)':''),opt=bl.length?{images:bl,cache:false,temp:.1}:{cache:false,temp:.1};
+    let got=null;
+    for(let t=0;t<2&&!got;t++){try{const r=await sample.json(exPrompt(fid,hint,cur)+body,opt);got=r.filter(x=>x&&x.fact)}catch(e){console.error(e)}}
+    if(!got){skipped.push('Couldn’t read '+grp.map(g=>g.label).join(', ')+'. Upload them again.');continue}
+    if(dbl){try{
+      const kn=got.map((x,k)=>`${k+1}. [${x.topic||cur||''}] ${x.fact}`).join('\n');
+      const more=await sample.json(`Below are the facts already extracted from the notes (the pages are shown again).\n${kn}\n\nLook at the pages again, very carefully, line by line, including margins, boxes, tables, arrows, underlined or circled words, diagram labels and small writing. List ONLY the facts that are on the pages but are MISSING from the list above, or only partly captured (a name, number, date or list item that was dropped). Same rules as before: one fact per item, self-contained, nothing summarised, topic assigned (use the same topic names as in the list). If nothing is missing return []. Return ONLY a JSON array: [{"topic":"...","fact":"..."}]`+body,opt);
+      got=got.concat(more.filter(x=>x&&x.fact));
+    }catch(e){console.error(e)}}
+    addF(got);
   }
-  review(by,skipped);
+  review(by,skipped,pages.length);
 }
-function review(by,skipped){
+function review(by,skipped,np){
   const g=Object.values(by).map(t=>({name:t.name,facts:[...new Set(t.facts.filter(Boolean))]}));
   window._pend={g};
-  app.innerHTML=`<h1>Review</h1><div class="mut" style="margin-bottom:12px">${g.length} topic(s) found. Fix any names; topics given the same name are merged.</div>`+
+  app.innerHTML=`<h1>Review</h1><div class="mut" style="margin-bottom:12px">${g.length} topic(s) found${np?' · '+g.reduce((a,t)=>a+t.facts.length,0)+' facts from '+np+' page(s) (about '+(g.reduce((a,t)=>a+t.facts.length,0)/np).toFixed(1)+' per page)':''}. Fix any names; topics given the same name are merged. If the count looks low for your notes, upload those pages again.</div>`+
   (skipped.length?`<div class="warn">⚠ ${esc(skipped.join(' '))}</div>`:'')+
   g.map((t,i)=>`<div class="card"><div class="row" style="margin:0;flex-wrap:nowrap"><input type="checkbox" id="c${i}" checked><input type="text" id="n${i}" value="${esc(t.name)}"></div><details style="margin-top:8px"><summary class="mut">${t.facts.length} facts</summary><ul class="f">${t.facts.map(f=>'<li>'+esc(f)+'</li>').join('')}</ul></details></div>`).join('')+
   `<div class="row"><button class="p" onclick="commit()">Save selected</button><button onclick="home()">Discard</button></div>`;
@@ -271,7 +297,7 @@ async function commit(){
     m[k].facts.forEach(t=>{if(!have.has(t)){have.add(t);topics[id].facts.push({t,s:0,c:0,l:0})}});
     await save(id);tch.push(id);
   }
-  if(!sample||!tch.length)return home();
+  if(!QS()||!tch.length)return home();
   app.innerHTML=`<h1>Saved ${tch.length} topic(s)</h1><div class="card">Next step: build the question bank. Claude writes several differently worded questions for every fact, once, and they are stored. After that, quizzes and revision run on the stored questions and don’t use Claude at all.<div class="row"><button class="p" id="bb">Build questions now</button><button onclick="home()">Later</button></div></div>`;
   document.getElementById('bb').onclick=()=>build(tch);
 }
@@ -486,9 +512,9 @@ function localQ1(x,allowed){
 function genLocal(items){const out=[];items.forEach(x=>{try{const q=localQ(x);if(q)out.push(q)}catch(e){console.error(e)}});return shuffle(out)}
 let MODE='bank';
 function setup(id){
-  const T=topics[id],n=T.facts.length;if(!(T.bk>0)&&MODE==='bank')MODE='quick';
+  const T=topics[id],n=T.facts.length;if(!(T.bk>0)&&MODE==='bank')MODE='quick';if(MODE==='live'&&!QS())MODE='quick';
   app.innerHTML=`<h1>${esc(T.name)}</h1><div class="card"><div class="mut">Question source</div>
-  <div class="row"><button class="${MODE==='bank'?'p':''}" onclick="MODE='bank';setup('${id}')">Claude-written, stored (${T.bk||0}/${n} ready)</button><button class="${MODE==='quick'?'p':''}" onclick="MODE='quick';setup('${id}')">Instant · no Claude · unlimited</button></div>
+  <div class="row"><button class="${MODE==='quick'?'p':''}" onclick="MODE='quick';setup('${id}')">Instant · no AI</button><button class="${MODE==='bank'?'p':''}" onclick="MODE='bank';setup('${id}')">Stored AI questions (${T.bk||0}/${n} ready)</button><button class="${MODE==='live'?'p':''}" onclick="${QS()?`MODE='live';setup('${id}')`:`toast('Add a Gemini key in Settings first')`}">Gemini · fresh each round</button></div>
   <div class="mut" style="margin-top:14px">Timer per question</div><div class="row">${[15,20,30,0].map(v=>`<button class="${TSEC()===v?'p':''}" onclick="localStorage.setItem('examquiz_t',${v});setup('${id}')">${v?v+'s':'Off'}</button>`).join('')}</div>
   <div class="mut" style="margin-top:14px">Recall first: options stay hidden until you tap “Show options”, so you try to retrieve the answer yourself</div><div class="row">${[1,0].map(v=>`<button class="${(RF()?1:0)===v?'p':''}" onclick="localStorage.setItem('examquiz_rf','${v}');setup('${id}')">${v?'On':'Off'}</button>`).join('')}</div>
   <div class="mut" style="margin-top:14px">How many facts this round? Weak and not-recently-tested facts come first.</div>
@@ -501,10 +527,10 @@ const STY=['direct recall','"which of the following is NOT / incorrect" twist','
 async function genLive(items){
   const seed=Math.random().toString(36).slice(2,6);
   const list=items.map((x,k)=>`${k+1}. ${x.f.t}`).join('\n');
-  const pr=`You are a tough exam-paper setter for Indian competitive exams. For each numbered fact write ONE multiple-choice question that tests exactly that fact. Mix difficulty across the batch (a few easy, mostly medium and hard). Use a different style for each, choosing from: ${STY.join('; ')}. About one in five should be fill-in-the-blank. Each question has exactly 4 options. Distractors must be plausible and close to the right answer (same category, similar names, dates, numbers, places), never obviously wrong, and only one option is correct. Do not reuse wording from the fact verbatim in a way that gives the answer away. "e" is a 2-3 sentence explanation: state the correct fact fully and say briefly why the closest wrong options are wrong. Variation seed: ${seed}. Return ONLY a JSON array: [{"i":<fact number>,"q":"...","o":["..","..","..",".."],"a":<index 0-3 of correct option>,"e":"..."}]\n\nFACTS:\n${list}`;
+  const pr=QRULES+`For each numbered fact write ONE question. Variation seed: ${seed}. Return ONLY a JSON array: [{"i":<fact number>,"q":"...","o":["..","..","..",".."],"a":<index 0-3 of correct option>,"e":"..."}]\n\nFACTS:\n${list}`;
   for(let t=0;t<2;t++){
     try{
-      const r=await sample.json(pr,{cache:false}),out=[];
+      const r=await QS().json(pr,{cache:false,temp:.9}),out=[];
       r.forEach(q=>{const it=items[q.i-1];if(!it||!Array.isArray(q.o)||q.o.length!==4||!(q.a>=0&&q.a<4))return;
         const right=q.o[q.a],o=shuffle(q.o.slice());out.push({it,q:q.q,o,a:o.indexOf(right),e:q.e})});
       if(out.length)return shuffle(out);
@@ -513,12 +539,13 @@ async function genLive(items){
   throw new Error('failed');
 }
 async function genBatch(items){
+  if(S.mode==='quick')return genLocal(items);
+  if(S.mode==='live'){try{return await genLive(items)}catch(e){console.error(e);return genLocal(items)}}
   const out=[],live=[],B=BANK[S.id]||{};
   items.forEach(x=>{const a=B[x.i];
     if(a&&a.length){const b=a[(x.f.v||0)%a.length];x.f.v=(x.f.v||0)+1;const right=b.o[b.a],o=shuffle(b.o.slice());out.push({it:x,q:b.q,o,a:o.indexOf(right),e:b.e})}
     else live.push(x)});
-  if(S.mode==='quick')return genLocal(items);
-  if(live.length){if(sample){try{out.push(...await genLive(live))}catch(e){out.push(...genLocal(live))}}else out.push(...genLocal(live))}
+  if(live.length){if(QS()){try{out.push(...await genLive(live))}catch(e){out.push(...genLocal(live))}}else out.push(...genLocal(live))}
   if(!out.length)throw new Error('none');
   return shuffle(out);
 }
